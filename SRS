@@ -1,0 +1,609 @@
+我给你设计一个 **可直接开发的 SRS 阅读助手架构**。目标是：
+
+* **完全 Web 可运行（本地或服务器）**
+* **尽量使用免费 API**
+* **结构简单但可扩展**
+
+参考你给的项目：
+Stream to River
+
+我会给你：
+
+1️⃣ 系统架构
+2️⃣ 技术选型（全部免费）
+3️⃣ 核心功能设计
+4️⃣ SRS算法
+5️⃣ 数据结构
+6️⃣ GitHub项目结构
+7️⃣ 关键代码示例
+
+---
+
+# 一、整体架构
+
+推荐做成 **Web App**
+
+```
+Frontend (React / Next.js)
+        │
+        │ API
+        ▼
+Backend (FastAPI)
+        │
+        ├── 文档解析
+        │     ├ pdf
+        │     └ epub
+        │
+        ├── 单词查询
+        │     ├ dictionary api
+        │     └ LLM fallback
+        │
+        ├── TTS朗读
+        │
+        └── SRS复习系统
+                │
+                ▼
+             SQLite
+```
+
+优点：
+
+* 部署简单
+* 可本地运行
+* 不依赖付费服务
+
+---
+
+# 二、技术选型（全部免费）
+
+### 前端
+
+```
+Next.js
+Tailwind
+```
+
+文本交互体验好。
+
+---
+
+### 后端
+
+```
+FastAPI
+```
+
+优点
+
+* python生态
+* 文档解析库多
+
+---
+
+### 文档解析
+
+PDF
+
+```
+pymupdf
+```
+
+EPUB
+
+```
+ebooklib
+```
+
+---
+
+### 单词查询 API（免费）
+
+推荐
+
+```
+https://dictionaryapi.dev
+```
+
+完全免费
+
+返回
+
+```
+音标
+释义
+词性
+```
+
+---
+
+### LLM fallback（可选）
+
+如果词典没有：
+
+```
+OpenRouter
+```
+
+免费模型：
+
+```
+meta-llama/llama-3.1-8b-instruct
+```
+
+---
+
+### TTS 朗读
+
+推荐：
+
+```
+Web Speech API
+```
+
+浏览器内置，**完全免费**
+
+```
+speechSynthesis
+```
+
+---
+
+### SRS 算法
+
+经典：
+
+```
+SM2 (SuperMemo2)
+```
+
+Anki同款。
+
+---
+
+# 三、核心功能设计
+
+---
+
+# 功能1 阅读器
+
+流程
+
+```
+上传pdf/epub
+      ↓
+解析文本
+      ↓
+按段落分割
+      ↓
+句子分割
+      ↓
+tokenize单词
+```
+
+阅读界面：
+
+```
+This is a sample sentence.
+```
+
+渲染为
+
+```
+[This] [is] [a] [sample] [sentence]
+```
+
+点击单词：
+
+弹出：
+
+```
+sample
+
+/ˈsæmpəl/
+
+n.
+样本
+例子
+
+出现历史
+
+Book1
+"this is a sample sentence"
+```
+
+---
+
+# 单词历史记录
+
+当单词再次出现：
+
+```
+sample*
+```
+
+hover：
+
+```
+previous seen:
+
+Book1
+"This is a sample sentence"
+```
+
+---
+
+# 功能2 单词本
+
+点击
+
+```
+Add to vocab
+```
+
+加入：
+
+```
+WordBook
+```
+
+记录
+
+```
+word
+meaning
+phonetic
+sentence
+book
+```
+
+---
+
+# SRS复习
+
+复习界面：
+
+```
+Word: sample
+
+Meaning?
+
+[show]
+
+Example
+This is a sample sentence
+```
+
+评分：
+
+```
+Again
+Hard
+Good
+Easy
+```
+
+更新复习时间。
+
+---
+
+# 四、SRS算法（SM2）
+
+数据
+
+```
+EF: easiness factor
+interval
+repetition
+```
+
+公式
+
+```
+if quality < 3:
+    repetition = 0
+    interval = 1
+else:
+    repetition += 1
+    if repetition == 1:
+        interval = 1
+    elif repetition == 2:
+        interval = 6
+    else:
+        interval = interval * EF
+
+EF = EF + (0.1 - (5-quality)*(0.08+(5-quality)*0.02))
+```
+
+---
+
+# 五、数据库设计
+
+SQLite
+
+---
+
+## books
+
+```
+id
+title
+type
+content
+```
+
+---
+
+## sentences
+
+```
+id
+book_id
+text
+index
+```
+
+---
+
+## words
+
+```
+id
+word
+phonetic
+meaning
+```
+
+---
+
+## word_occurrence
+
+```
+id
+word_id
+sentence_id
+book_id
+```
+
+---
+
+## vocab
+
+```
+id
+word_id
+added_time
+next_review
+interval
+ef
+repetition
+```
+
+---
+
+# 六、GitHub 项目结构
+
+```
+srs-reader
+│
+├── backend
+│   ├── main.py
+│   ├── parser
+│   │      pdf_parser.py
+│   │      epub_parser.py
+│   │
+│   ├── dictionary
+│   │      lookup.py
+│   │
+│   ├── srs
+│   │      sm2.py
+│   │
+│   └── models
+│
+├── frontend
+│   ├── pages
+│   │      reader.tsx
+│   │      vocab.tsx
+│   │
+│   ├── components
+│   │      WordPopup.tsx
+│   │      Sentence.tsx
+│   │
+│   └── utils
+│
+└── database
+    db.sqlite
+```
+
+---
+
+# 七、核心代码示例
+
+---
+
+# 1 PDF解析
+
+```python
+import fitz
+
+def parse_pdf(file):
+
+    doc = fitz.open(file)
+
+    text = ""
+
+    for page in doc:
+        text += page.get_text()
+
+    return text
+```
+
+---
+
+# 2 EPUB解析
+
+```python
+from ebooklib import epub
+from bs4 import BeautifulSoup
+
+def parse_epub(path):
+
+    book = epub.read_epub(path)
+
+    text = ""
+
+    for item in book.get_items():
+
+        if item.get_type() == 9:
+            soup = BeautifulSoup(item.get_content(),'html.parser')
+            text += soup.get_text()
+
+    return text
+```
+
+---
+
+# 3 单词查询
+
+```python
+import requests
+
+def lookup(word):
+
+    url=f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+
+    r=requests.get(url)
+
+    if r.status_code!=200:
+        return None
+
+    data=r.json()[0]
+
+    return {
+        "phonetic":data.get("phonetic"),
+        "meaning":data["meanings"][0]["definitions"][0]["definition"]
+    }
+```
+
+---
+
+# 4 句子朗读
+
+前端
+
+```javascript
+function speak(text){
+
+const utterance = new SpeechSynthesisUtterance(text)
+
+speechSynthesis.speak(utterance)
+
+}
+```
+
+---
+
+# 5 单词点击
+
+```javascript
+function onWordClick(word){
+
+fetch("/api/dict?word="+word)
+.then(r=>r.json())
+.then(showPopup)
+
+}
+```
+
+---
+
+# 八、UI示例
+
+阅读界面
+
+```
+------------------------------------------------
+
+This is a sample sentence from the book.
+
+------------------------------------------------
+
+sample*
+
+-----------------------------------------
+sample
+
+/ˈsæmpəl/
+
+example or model
+
+previous seen:
+
+Book1
+"This is a sample sentence"
+-----------------------------------------
+```
+
+---
+
+# 九、进阶功能（强烈建议）
+
+### 1 AI解释句子
+
+点击句子
+
+```
+Explain sentence
+```
+
+LLM解释。
+
+---
+
+### 2 AI例句
+
+```
+Generate 3 examples
+```
+
+---
+
+### 3 difficulty detection
+
+根据
+
+```
+词频
+CEFR
+```
+
+标记难词。
+
+---
+
+### 4 自动生成单词卡
+
+利用LLM：
+
+```
+word
+meaning
+example
+synonym
+```
+
+---
+
+# 十、最强升级版本
+
+如果做完整：
+
+这个产品可以接近：
+
+LingQ
+Readwise Reader
+Anki
+
+三者结合。
+
+---
+

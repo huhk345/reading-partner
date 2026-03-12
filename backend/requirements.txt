@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+pymupdf
+requests
+python-multipart
+pytesseract
+Pillow
+ebooklib
+beautifulsoup4
+g4f

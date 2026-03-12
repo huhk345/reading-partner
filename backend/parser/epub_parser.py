@@ -1,0 +1,53 @@
+import ebooklib
+from ebooklib import epub
+from bs4 import BeautifulSoup
+import re
+
+def parse_epub(file_path):
+    """
+    Parses an EPUB file and returns:
+    1. full_text: The entire text content.
+    2. sentences: A list of sentences.
+    3. pages_data: Empty list for now as EPUB is reflowable.
+    4. cover_image: Bytes of the cover image if found.
+    """
+    book = epub.read_epub(file_path)
+    full_text = ""
+    cover_image = None
+    
+    # Try to extract cover image
+    # ebooklib doesn't have a very clean way to get the cover directly
+    # but we can look for items with cover type
+    for item in book.get_items():
+        if item.get_type() == ebooklib.ITEM_COVER:
+            cover_image = item.get_content()
+            break
+            
+    if not cover_image:
+        # Sometimes it's just an image named 'cover.jpg' etc.
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_IMAGE:
+                name = item.get_name().lower()
+                if 'cover' in name:
+                    cover_image = item.get_content()
+                    break
+    
+    # Iterate through all documents in the EPUB
+    for item in book.get_items():
+        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+            # Parse HTML content
+            soup = BeautifulSoup(item.get_content(), 'html.parser')
+            # Get text from the soup
+            text = soup.get_text()
+            full_text += text + "\n"
+    
+    # Clean up text
+    # Replace multiple newlines with a single newline
+    full_text = re.sub(r'\n+', '\n', full_text)
+    
+    # Simple sentence splitting logic (same as PDF for now)
+    clean_text = re.sub(r'\n+', ' ', full_text)
+    sentences = re.split(r'(?<=[.!?])\s+', clean_text)
+    
+    # Return empty pages_data for now
+    return full_text, [s.strip() for s in sentences if s.strip()], [], cover_image
