@@ -1,76 +1,107 @@
-import g4f
 import json
 import re
+import requests
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../.env'))
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL = "stepfun/step-3.5-flash:free"
+
+def call_openrouter(messages, model=DEFAULT_MODEL, temperature=0.7, max_tokens=50000):
+    if not OPENROUTER_API_KEY:
+        print("Warning: OPENROUTER_API_KEY not found in environment.")
+        return None
+    
+    try:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        response = requests.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "Reading Partner",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        if response.status_code == 200:
+            print(f"OpenRouter API response: {response.json()}")
+            return response.json()['choices'][0]['message']['content']
+        else:
+            print(f"OpenRouter API error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Error calling OpenRouter: {e}")
+        return None
 
 def get_book_info_and_clean_text(text_sample):
     """
-    Uses a free LLM to extract book title and clean up a text sample.
+    Uses OpenRouter free LLM to extract book title and clean up a text sample.
+    Focuses on extracting the 'real content' - the actual narrative text.
     """
     prompt = f"""
-    Analyze the following text sample from a book and return a JSON object with:
-    1. "title": The most likely title of the book.
-    2. "cleaned_sample": A cleaned version of the text sample (fix encoding issues, remove headers/footers if obvious).
+    You are an expert book editor. Analyze the following text sample from a book.
+    
+    Tasks:
+    1. Identify the "title" of the book.
+    2. Extract the "cleaned_sample": This should be the REAL narrative content that a reader cares about. 
+       - REMOVE: Page numbers, headers, footers, copyright notices, ISBNs, publisher info, and tables of contents.
+       - KEEP: The actual story, dialogue, and main text.
+       - DO NOT summarize. Keep the original wording exactly as it is, just filter out the non-book elements.
+       - Fix any obvious encoding or PDF-extraction artifacts (like words split across lines).
 
     Text sample:
-    {text_sample[:2000]}
+    {text_sample[:5000]}
     
     Response format: {{"title": "...", "cleaned_sample": "..."}}
+    Return ONLY the JSON.
     """
     
-    try:
-        response = g4f.ChatCompletion.create(
-            model=g4f.models.gpt_35_turbo,
-            messages=[{"role": "user", "content": prompt}],
-        )
+    response = call_openrouter([{"role": "user", "content": prompt}], temperature=0.1)
+    if response:
         # Extract JSON from response
         match = re.search(r'\{.*\}', response, re.DOTALL)
         if match:
-            return json.loads(match.group())
-    except Exception as e:
-        print(f"Error getting book info: {e}")
+            try:
+                data = json.loads(match.group())
+                return data
+            except json.JSONDecodeError as e:
+                print(f"Failed to decode JSON from OpenRouter response: {e}")
     
     return None
 
+def split_sentences_regex(text):
+    """
+    Splits text into sentences using regex based on '.', '?', '!' and other sentence-ending symbols.
+    """
+    if not text:
+        return []
+    
+    # Pre-cleaning: replace multiple spaces and newlines
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Split by '.', '?', '!' followed by space or end of string
+    # We use a lookbehind to keep the punctuation
+    # Symbols: . ! ? … (ellipsis)
+    sentence_endings = r'(?<=[.!?…])\s+'
+    sentences = re.split(sentence_endings, text)
+    
+    return [s.strip() for s in sentences if s.strip()]
+
+# Maintain compatibility with main.py for now
 def split_sentences_llm(text):
     """
-    Uses a free LLM to split text into real sentences.
-    Since LLMs have context limits, we'll process in chunks or use a hybrid approach.
-    For simplicity in this prototype, we'll use LLM to refine a chunk and return sentences.
+    Now just a wrapper for regex splitting to avoid redundant LLM calls.
     """
-    # If text is too long, we might need a more robust strategy.
-    # For now, let's use a simple regex but allow LLM to "fix" a few if needed,
-    # OR just use a better library if g4f is slow.
-    # But the requirement says "use free llm tools/api".
-    
-    chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
-    all_sentences = []
-    
-    for chunk in chunks[:3]: # Limit to first 3 chunks for performance in prototype
-        prompt = f"""
-        Split the following text into a list of real, complete sentences. 
-        Return ONLY a JSON list of strings.
-        
-        Text:
-        {chunk}
-        """
-        try:
-            response = g4f.ChatCompletion.create(
-                model=g4f.models.gpt_35_turbo,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            match = re.search(r'\[.*\]', response, re.DOTALL)
-            if match:
-                sentences = json.loads(match.group())
-                all_sentences.extend(sentences)
-        except Exception as e:
-            print(f"Error splitting sentences: {e}")
-            # Fallback to regex
-            all_sentences.extend(re.split(r'(?<=[.!?])\s+', chunk))
-            
-    # If we didn't process the whole book with LLM (to save time/limits),
-    # process the rest with regex.
-    if len(text) > 12000:
-        remaining_text = text[12000:]
-        all_sentences.extend(re.split(r'(?<=[.!?])\s+', remaining_text))
-        
-    return [s.strip() for s in all_sentences if s.strip()]
+    return split_sentences_regex(text)

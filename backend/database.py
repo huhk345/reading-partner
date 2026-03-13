@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Float
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Float, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import datetime
@@ -49,13 +49,16 @@ class WordOccurrence(Base):
     word_id = Column(Integer, ForeignKey("words.id"))
     sentence_id = Column(Integer, ForeignKey("sentences.id"))
     book_id = Column(Integer, ForeignKey("books.id"))
+    
+    __table_args__ = (UniqueConstraint('word_id', 'sentence_id', name='_word_sentence_uc'),)
+    
     word = relationship("Word", back_populates="occurrences")
     sentence = relationship("Sentence", back_populates="occurrences")
 
 class Vocab(Base):
     __tablename__ = "vocab"
     id = Column(Integer, primary_key=True, index=True)
-    word_id = Column(Integer, ForeignKey("words.id"))
+    word_id = Column(Integer, ForeignKey("words.id"), unique=True)
     added_time = Column(DateTime, default=datetime.datetime.utcnow)
     next_review = Column(DateTime, default=datetime.datetime.utcnow)
     interval = Column(Integer, default=0)

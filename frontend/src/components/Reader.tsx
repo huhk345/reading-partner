@@ -8,9 +8,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { 
+  Dialog, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogContent, 
+  DialogFooter 
+} from './Dialog';
 
 // Set up worker for react-pdf
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 interface WordOverlayProps {
   pageData?: PageData;
@@ -80,6 +91,18 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [renderedPages, setRenderedPages] = useState<Record<number, { width: number, height: number }>>({});
   const [reparsing, setReparsing] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    onConfirm?: () => void;
+    confirmText?: string;
+    isAlert?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+  });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -102,18 +125,35 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
   }, [bookId]);
 
   const handleReparse = async () => {
-    if (!confirm("Are you sure you want to re-parse this book? This will reset your sentences and word occurrences for this book.")) return;
-    setReparsing(true);
-    try {
-      await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
-      await fetchBook();
-      alert("Book re-parsed successfully! 🚀");
-    } catch (error) {
-      console.error('Error reparsing book:', error);
-      alert("Failed to re-parse book.");
-    } finally {
-      setReparsing(false);
-    }
+    setDialogConfig({
+      isOpen: true,
+      title: "Re-parse Book?",
+      description: "Are you sure you want to re-parse this book? This will reset your sentences and word occurrences for this book.",
+      confirmText: "Yes, Re-parse",
+      onConfirm: async () => {
+        setReparsing(true);
+        try {
+          await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
+          await fetchBook();
+          setDialogConfig({
+            isOpen: true,
+            title: "Success! 🚀",
+            description: "Book re-parsed successfully!",
+            isAlert: true
+          });
+        } catch (error) {
+          console.error('Error reparsing book:', error);
+          setDialogConfig({
+            isOpen: true,
+            title: "Error",
+            description: "Failed to re-parse book.",
+            isAlert: true
+          });
+        } finally {
+          setReparsing(false);
+        }
+      }
+    });
   };
 
   // Handle auto-scaling and container width
@@ -269,7 +309,12 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
         params: { word_id: selectedWord.id }
       });
       setSelectedWord(null);
-      alert('Word added to your vocab bank! 🌟');
+      setDialogConfig({
+        isOpen: true,
+        title: "Word Added! 🌟",
+        description: "Word added to your vocab bank!",
+        isAlert: true
+      });
     } catch (error) {
       console.error('Error adding to vocab:', error);
     }
@@ -413,6 +458,26 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
       {/* Pagination & Zoom Controls (only for PDF) */}
       {book.type === 'pdf' && viewMode === 'pdf' && (
         <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10">
+          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+            <button 
+              onClick={() => setScale(prev => Math.max(prev - 0.1, 0.5))}
+              className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-lg transition-colors text-slate-600 font-bold"
+              title="Zoom out"
+            >
+              -
+            </button>
+            <div className="px-2 text-sm font-bold text-slate-500 w-16 text-center">
+              {Math.round(scale * 100)}%
+            </div>
+            <button
+              onClick={() => setScale(prev => Math.min(prev + 0.1, 3))}
+              className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-lg transition-colors text-slate-600 font-bold"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+
           <div className="flex items-center gap-4">
             <button 
               disabled={currentPage <= 1}
@@ -433,33 +498,6 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
             </button>
           </div>
           
-          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-            <button 
-              onClick={() => setScale(prev => Math.max(prev - 0.1, 0.5))}
-              className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-lg transition-colors text-slate-600 font-bold"
-              title="Zoom out"
-            >
-              -
-            </button>
-            <div className="px-2 text-sm font-bold text-slate-500 w-16 text-center">
-              {Math.round(scale * 100)}%
-            </div>
-            <button 
-              onClick={() => setScale(prev => Math.min(prev + 0.1, 3))}
-              className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-lg transition-colors text-slate-600 font-bold"
-              title="Zoom in"
-            >
-              +
-            </button>
-            <div className="w-[1px] h-6 bg-slate-200 mx-1" />
-            <button 
-              onClick={() => setScale(1.0)}
-              className="px-3 py-1.5 hover:bg-white rounded-lg transition-colors text-xs font-bold text-indigo-600 uppercase"
-            >
-              Fit Width
-            </button>
-          </div>
-
           <div className="flex items-center gap-4">
             <button
               onClick={handleReparse}
@@ -469,14 +507,9 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
               <RefreshCw className={`w-3.5 h-3.5 ${reparsing ? 'animate-spin' : ''}`} />
               {reparsing ? 'Reparsing...' : 'Reparse Book'}
             </button>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-               LIVE INTERACTIVE MODE
             </div>
-          </div>
-        </div>
-      )}
-
+            </div>
+            )}
       {/* Word Definition Modal (Same as before but integrated) */}
       <AnimatePresence>
         {selectedWord && (
@@ -556,6 +589,37 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
           </>
         )}
       </AnimatePresence>
+
+      <Dialog 
+        isOpen={dialogConfig.isOpen} 
+        onClose={() => setDialogConfig(prev => ({ ...prev, isOpen: false }))}
+      >
+        <DialogHeader>
+          <DialogTitle>{dialogConfig.title}</DialogTitle>
+          <DialogDescription>{dialogConfig.description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          {!dialogConfig.isAlert && (
+            <button
+              onClick={() => setDialogConfig(prev => ({ ...prev, isOpen: false }))}
+              className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (dialogConfig.onConfirm) {
+                dialogConfig.onConfirm();
+              }
+              setDialogConfig(prev => ({ ...prev, isOpen: false }));
+            }}
+            className="clay-button clay-primary px-6 py-2"
+          >
+            {dialogConfig.confirmText || "OK"}
+          </button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

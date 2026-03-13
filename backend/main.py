@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import shutil
 import os
 import re
@@ -9,6 +10,10 @@ from typing import List, Optional
 import datetime
 from fastapi.staticfiles import StaticFiles
 from urllib.parse import quote
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from database import SessionLocal, init_db, Book, Sentence, Word, WordOccurrence, Vocab, get_db
 from parser.pdf_parser import parse_pdf
@@ -61,8 +66,8 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         title = llm_info.get("title", file.filename)
         clean_text = llm_info.get("cleaned_sample", full_text)
     
-    # Improved sentence splitting via LLM
-    sentences = split_sentences_llm(full_text)
+    # Improved sentence splitting via regex on cleaned text
+    sentences = split_sentences_llm(clean_text)
     
     # Save book initially to get ID
     db_book = Book(
@@ -93,9 +98,24 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     db.commit()
     return {"book_id": db_book.id, "title": db_book.title}
 
+def get_book_url(book):
+    filename = book.filename or book.title
+    if book.type == "pdf" and not filename.lower().endswith(".pdf"):
+        filename += ".pdf"
+    elif book.type == "epub" and not filename.lower().endswith(".epub"):
+        filename += ".epub"
+    return f"http://localhost:8000/uploads/{quote(filename)}"
+
 @app.get("/api/books")
 def list_books(db: Session = Depends(get_db)):
-    return db.query(Book).all()
+    books = db.query(Book).all()
+    return [{
+        "id": book.id,
+        "title": book.title,
+        "type": book.type,
+        "cover_image": book.cover_image,
+        "pdf_url": get_book_url(book)
+    } for book in books]
 
 @app.get("/api/books/{book_id}")
 def get_book(book_id: int, db: Session = Depends(get_db)):
@@ -112,7 +132,7 @@ def get_book(book_id: int, db: Session = Depends(get_db)):
         "clean_text": book.clean_text,
         "pages_data": json.loads(book.pages_data) if book.pages_data else None,
         "cover_image": book.cover_image,
-        "pdf_url": f"http://localhost:8000/uploads/{quote(book.filename or book.title)}"
+        "pdf_url": get_book_url(book)
     }
 
 @app.post("/api/books/{book_id}/reparse")
@@ -122,6 +142,11 @@ async def reparse_book(book_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Book not found")
     
     filename = book.filename or book.title
+    if book.type == "pdf" and not filename.lower().endswith(".pdf"):
+        filename += ".pdf"
+    elif book.type == "epub" and not filename.lower().endswith(".epub"):
+        filename += ".epub"
+        
     file_path = os.path.join(UPLOAD_DIR, filename)
     
     if not os.path.exists(file_path):
@@ -142,8 +167,8 @@ async def reparse_book(book_id: int, db: Session = Depends(get_db)):
     else:
         book.clean_text = full_text
 
-    # Improved sentence splitting via LLM
-    sentences = split_sentences_llm(full_text)
+    # Improved sentence splitting via regex on cleaned text
+    sentences = split_sentences_llm(book.clean_text)
     
     # Update book content
     book.content = full_text
@@ -194,9 +219,14 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
                 meaning=result.get("meaning"),
                 audio_url=result.get("audio_url")
             )
-            db.add(db_word)
-            db.commit()
-            db.refresh(db_word)
+            try:
+                db.add(db_word)
+                db.commit()
+                db.refresh(db_word)
+            except IntegrityError:
+                db.rollback()
+                # If another request inserted it while we were looking it up
+                db_word = db.query(Word).filter(Word.word == word.lower()).first()
         else:
             return {"word": word, "error": "Not found"}
     
@@ -208,8 +238,13 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
         ).first()
         if not existing_occ:
             occ = WordOccurrence(word_id=db_word.id, sentence_id=sentence_id, book_id=book_id)
-            db.add(occ)
-            db.commit()
+            try:
+                db.add(occ)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                # If already tracked, just continue
+                pass
             
     # 4. Fetch previous occurrences for context
     occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == db_word.id).all()
@@ -235,8 +270,13 @@ def add_to_vocab(word_id: int, db: Session = Depends(get_db)):
     db_vocab = db.query(Vocab).filter(Vocab.word_id == word_id).first()
     if not db_vocab:
         db_vocab = Vocab(word_id=word_id)
-        db.add(db_vocab)
-        db.commit()
+        try:
+            db.add(db_vocab)
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Already added by another request, just continue
+            pass
     return {"status": "success"}
 
 @app.get("/api/vocab/review")

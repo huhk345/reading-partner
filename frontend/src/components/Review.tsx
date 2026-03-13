@@ -5,6 +5,13 @@ import axios from 'axios';
 import { ArrowLeft, Check, X, Info, Volume2, Sparkles, Trophy, History } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Dialog, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from './Dialog';
 
 interface ReviewProps {
   onBack: () => void;
@@ -15,6 +22,7 @@ export default function Review({ onBack }: ReviewProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isFinished, setIsFinished] = useState(false);
 
   const fetchReviews = async () => {
     setLoading(true);
@@ -42,8 +50,7 @@ export default function Review({ onBack }: ReviewProps) {
       if (currentIndex < reviews.length - 1) {
         setCurrentIndex(currentIndex + 1);
       } else {
-        alert('Amazing! You finished all your reviews! 🏆');
-        onBack();
+        setIsFinished(true);
       }
     } catch (error) {
       console.error('Error submitting review:', error);
@@ -235,6 +242,26 @@ export default function Review({ onBack }: ReviewProps) {
           </motion.div>
         )}
       </div>
+
+      <Dialog 
+        isOpen={isFinished} 
+        onClose={onBack}
+      >
+        <DialogHeader>
+          <DialogTitle>Amazing! You finished all your reviews! 🏆</DialogTitle>
+          <DialogDescription>
+            You've mastered all your words for today. Keep it up!
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <button
+            onClick={onBack}
+            className="clay-button clay-primary px-6 py-2"
+          >
+            OK
+          </button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

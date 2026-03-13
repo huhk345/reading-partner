@@ -5,12 +5,14 @@ import BookList from '@/components/BookList';
 import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
-import { ArrowLeft, GraduationCap, Sparkles, BookOpen } from 'lucide-react';
+import { ArrowLeft, GraduationCap, Sparkles, BookOpen, Settings } from 'lucide-react';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/Dialog';
 
 export default function Home() {
   const [view, setView] = useState<'library' | 'reader' | 'review'>('library');
   const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'pdf' | 'text'>('pdf');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handleSelectBook = (id: number) => {
     setSelectedBookId(id);
@@ -65,6 +67,13 @@ export default function Home() {
           </div>
           
           <nav className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsDialogOpen(true)}
+              className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              title="Settings"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
             <button 
               onClick={() => setView('library')}
               className={`px-4 py-2 rounded-xl font-bold transition-colors text-sm ${view === 'library' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}`}
@@ -125,6 +134,42 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <Dialog isOpen={isDialogOpen} onClose={() => setIsDialogOpen(false)}>
+        <DialogHeader>
+          <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm border-2 border-indigo-200">
+            <Settings className="w-6 h-6" />
+          </div>
+          <DialogTitle>Magic Settings</DialogTitle>
+          <DialogDescription>
+            Customize your reading adventure.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogContent className="space-y-4">
+          <div className="clay-card p-4 bg-slate-50 border-2 border-slate-100">
+            <h4 className="font-bold text-slate-700 mb-2">Display Mode</h4>
+            <div className="flex gap-2">
+              <button className="flex-1 py-2 px-3 bg-white border-2 border-indigo-500 text-indigo-700 rounded-xl font-bold shadow-sm">
+                Default
+              </button>
+              <button className="flex-1 py-2 px-3 bg-white border-2 border-slate-200 text-slate-500 rounded-xl font-bold hover:border-slate-300 transition-colors">
+                Cozy
+              </button>
+            </div>
+          </div>
+          <p className="text-slate-400 text-sm text-center font-medium italic">
+            "Every great story starts with a single click."
+          </p>
+        </DialogContent>
+        <DialogFooter>
+          <button 
+            onClick={() => setIsDialogOpen(false)}
+            className="clay-button clay-primary w-full sm:w-auto"
+          >
+            Got it!
+          </button>
+        </DialogFooter>
+      </Dialog>
     </main>
   );
 }
