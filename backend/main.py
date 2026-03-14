@@ -21,6 +21,7 @@ from parser.epub_parser import parse_epub
 from parser.llm_parser import get_book_info_and_clean_text, split_sentences_llm
 from dictionary.lookup import lookup_word
 from srs.sm2 import update_sm2
+from tts.generate import tts_engine
 
 app = FastAPI(title="Reading Partner API")
 
@@ -37,6 +38,11 @@ app.add_middleware(
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+TTS_DIR = "uploads/tts"
+if not os.path.exists(TTS_DIR):
+    os.makedirs(TTS_DIR)
+app.mount("/tts", StaticFiles(directory=TTS_DIR), name="tts")
 
 init_db()
 
@@ -329,3 +335,12 @@ def submit_review(vocab_id: int, quality: int, db: Session = Depends(get_db)):
     
     db.commit()
     return {"next_review": next_review}
+
+@app.post("/api/tts")
+def generate_tts(text: str):
+    try:
+        audio_path = tts_engine.synthesize(text)
+        audio_filename = os.path.basename(audio_path)
+        return {"audio_url": f"http://localhost:8000/tts/{audio_filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")

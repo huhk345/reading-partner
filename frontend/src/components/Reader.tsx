@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ArrowLeft, Volume2, Plus, History, X, BookOpen, FileText, RefreshCw } from 'lucide-react';
-import { Book, WordDefinition, PageData } from '../types';
+import { Book, WordDefinition, PageData, Sentence } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -28,15 +28,26 @@ interface WordOverlayProps {
   renderedWidth: number;
   renderedHeight: number;
   onWordClick: (word: string) => void;
+  onSentencePlay: (sentenceText: string) => void;
+  pageIndex: number;
+  sentences?: Sentence[];
+  findSentenceForWord: (word: string) => Sentence | null;
 }
 
-function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick }: WordOverlayProps) {
+function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, findSentenceForWord }: WordOverlayProps) {
   if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
     return null;
   }
 
-  // The ratio of rendered pixels to PDF points
   const pointToPixel = renderedWidth / pageData.width;
+
+  const isFirstWordOfSentence = (wordText: string, idx: number): boolean => {
+    if (idx === 0) return true;
+    const prevWord = pageData.words[idx - 1];
+    if (!prevWord) return true;
+    const prevEndsWithPunctuation = /[.!?]$/.test(prevWord.text.replace(/\s+$/, ''));
+    return prevEndsWithPunctuation;
+  };
 
   return (
     <div 
@@ -48,6 +59,9 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick }: W
     >
       {pageData.words.map((word, idx) => {
         const [x0, y0, x1, y1] = word.bbox;
+        
+        const sentence = findSentenceForWord(word.text);
+        const showPlayButton = sentence && isFirstWordOfSentence(word.text, idx);
         
         return (
           <div
@@ -64,6 +78,18 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick }: W
               onWordClick(word.text);
             }}
           >
+            {showPlayButton && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (sentence) onSentencePlay(sentence.text);
+                }}
+                className="opacity-0 group-hover:opacity-100 absolute -right-8 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-500 text-white rounded-full shadow-lg hover:bg-indigo-600 transition-all z-[80] cursor-pointer"
+                title="Play sentence"
+              >
+                <Volume2 className="w-4 h-4" />
+              </button>
+            )}
             <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
                 {word.text}
             </div>
@@ -77,13 +103,13 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick }: W
 interface ReaderProps {
   bookId: number;
   onBack: () => void;
-  viewMode: 'pdf' | 'text';
-  setViewMode: (mode: 'pdf' | 'text') => void;
 }
 
-export default function Reader({ bookId, onBack, viewMode, setViewMode }: ReaderProps) {
+export default function Reader({ bookId, onBack }: ReaderProps) {
   const [book, setBook] = useState<Book | null>(null);
   const [selectedWord, setSelectedWord] = useState<WordDefinition | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoadingWord, setIsLoadingWord] = useState(false);
   const [loading, setLoading] = useState(true);
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -91,6 +117,8 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [renderedPages, setRenderedPages] = useState<Record<number, { width: number, height: number }>>({});
   const [reparsing, setReparsing] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [hoveredWordPos, setHoveredWordPos] = useState<{x: number, y: number, sentenceId?: number, sentenceText?: string} | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -110,9 +138,6 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
     try {
       const response = await axios.get(`http://localhost:8000/api/books/${bookId}`);
       setBook(response.data);
-      if (response.data.type === 'epub') {
-        setViewMode('text');
-      }
     } catch (error) {
       console.error('Error fetching book:', error);
     } finally {
@@ -186,7 +211,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
 
   // Update current page on scroll
   useEffect(() => {
-    if (viewMode !== 'pdf' || !scrollContainerRef.current) return;
+    if (book?.type !== 'pdf' || !scrollContainerRef.current) return;
 
     const handleScroll = () => {
         if (!scrollContainerRef.current) return;
@@ -216,7 +241,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
     const container = scrollContainerRef.current;
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [viewMode, currentPage]);
+  }, [book?.type, currentPage]);
 
   const scrollToPage = (pageNum: number) => {
     if (!scrollContainerRef.current) return;
@@ -227,11 +252,16 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
   };
 
   const handleWordClick = async (word: string, sentenceId?: number) => {
-    try {
-      // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
-      const cleanWord = word.replace(/[^\w\s']|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (!cleanWord) return;
+    // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
+    const cleanWord = word.replace(/[^\w\s']|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!cleanWord) return;
 
+    // Open dialog immediately with loading state (REQ-001)
+    setIsDialogOpen(true);
+    setIsLoadingWord(true);
+    setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
+
+    try {
       const response = await axios.get(`http://localhost:8000/api/dict`, {
         params: { 
           word: cleanWord,
@@ -242,6 +272,9 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
       setSelectedWord(response.data);
     } catch (error) {
       console.error('Error fetching word:', error);
+      setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: 'Failed to load definition' });
+    } finally {
+      setIsLoadingWord(false);
     }
   };
 
@@ -282,7 +315,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
     }
   };
 
-  const speak = (text: string, audioUrl?: string) => {
+  const speak = async (text: string, audioUrl?: string) => {
     if (audioUrl) {
       const audio = new Audio(audioUrl);
       audio.play().catch(e => {
@@ -291,7 +324,40 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
       });
       return;
     }
+    try {
+      const response = await axios.post('http://localhost:8000/api/tts', null, {
+        params: { text }
+      });
+      if (response.data.audio_url) {
+        const audio = new Audio(response.data.audio_url);
+        audio.play().catch(e => {
+          console.error("Error playing TTS audio, falling back to synthesis", e);
+          fallbackSpeak(text);
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("Error fetching TTS audio, falling back to synthesis", error);
+    }
     fallbackSpeak(text);
+  };
+
+  const findSentenceContainingWord = (word: string): Sentence | null => {
+    if (!book?.sentences) return null;
+    const cleanWord = word.replace(/[^\w']/g, '').toLowerCase();
+    for (const sentence of book.sentences) {
+      const cleanSentence = sentence.text.replace(/[^\w']/g, '').toLowerCase();
+      if (cleanSentence.includes(cleanWord)) {
+        return sentence;
+      }
+    }
+    return null;
+  };
+
+  const handleSentencePlay = async (sentenceText: string) => {
+    setIsSpeaking(true);
+    await speak(sentenceText);
+    setIsSpeaking(false);
   };
 
   const fallbackSpeak = (text: string) => {
@@ -308,17 +374,20 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
       await axios.post('http://localhost:8000/api/vocab', null, {
         params: { word_id: selectedWord.id }
       });
+      // Close the word dialog (REQ-002: no confirmation dialog)
+      setIsDialogOpen(false);
       setSelectedWord(null);
-      setDialogConfig({
-        isOpen: true,
-        title: "Word Added! 🌟",
-        description: "Word added to your vocab bank!",
-        isAlert: true
-      });
     } catch (error) {
       console.error('Error adding to vocab:', error);
     }
   };
+
+  // Auto-play audio when word is loaded with audio_url (REQ-004)
+  useEffect(() => {
+    if (selectedWord && selectedWord.audio_url && !isLoadingWord) {
+      speak(selectedWord.word, selectedWord.audio_url);
+    }
+  }, [selectedWord, isLoadingWord]);
 
   if (loading || !book) {
     return (
@@ -335,7 +404,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
     <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden h-full">
       <div className="flex-1 flex overflow-hidden">
         {/* Left Side: Interactive PDF (only for PDF books) */}
-        {book.type === 'pdf' && viewMode === 'pdf' ? (
+        {book.type === 'pdf' ? (
           <div 
             ref={scrollContainerRef}
             className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 flex flex-col items-center gap-8 py-8 px-4"
@@ -401,6 +470,10 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
                             renderedWidth={renderedPages[index].width}
                             renderedHeight={renderedPages[index].height}
                             onWordClick={handleWordClick}
+                            onSentencePlay={handleSentencePlay}
+                            pageIndex={index}
+                            sentences={book.sentences}
+                            findSentenceForWord={findSentenceContainingWord}
                         />
                     )}
 
@@ -456,7 +529,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
       </div>
 
       {/* Pagination & Zoom Controls (only for PDF) */}
-      {book.type === 'pdf' && viewMode === 'pdf' && (
+      {book.type === 'pdf' && (
         <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10">
           <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
             <button 
@@ -479,7 +552,7 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
           </div>
 
           <div className="flex items-center gap-4">
-            <button 
+            <button
               disabled={currentPage <= 1}
               onClick={() => scrollToPage(currentPage - 1)}
               className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-50 hover:bg-slate-200 transition-colors font-medium flex items-center gap-2"
@@ -512,13 +585,13 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
             )}
       {/* Word Definition Modal (Same as before but integrated) */}
       <AnimatePresence>
-        {selectedWord && (
+        {isDialogOpen && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedWord(null)}
+              onClick={() => setIsDialogOpen(false)}
               className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-[100]"
             />
             <motion.div
@@ -528,63 +601,73 @@ export default function Reader({ bookId, onBack, viewMode, setViewMode }: Reader
               className="fixed inset-x-4 bottom-8 z-[101] clay-card bg-white p-8 max-w-2xl mx-auto shadow-2xl border-t-8 border-indigo-500"
             >
               <button
-                onClick={() => setSelectedWord(null)}
+                onClick={() => setIsDialogOpen(false)}
                 className="absolute top-4 right-4 w-10 h-10 clay-card flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
 
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-4xl font-bold text-indigo-600 mb-1">{selectedWord.word}</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="text-blue-500 font-bold text-lg">{selectedWord.phonetic}</span>
-                    <button
-                      onClick={() => speak(selectedWord.word, selectedWord.audio_url)}
-                      className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
-                    >
-                      <Volume2 className="w-5 h-5" />
-                    </button>
-                  </div>
+              {isLoadingWord ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-slate-500 font-medium">Looking up "{selectedWord?.word}"...</p>
                 </div>
-              </div>
-
-              <div className="mb-8">
-                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-indigo-400 rounded-full" />
-                  What it means
-                </h4>
-                <p className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line">
-                  {selectedWord.meaning}
-                </p>
-              </div>
-
-              {selectedWord.occurrences && selectedWord.occurrences.length > 0 && (
-                <div className="mb-8">
-                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <History className="w-4 h-4" />
-                    Seen before
-                  </h4>
-                  <div className="max-h-32 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                    {selectedWord.occurrences.map((occ, idx) => (
-                      <div key={idx} className="p-4 bg-slate-50 rounded-2xl text-slate-600 italic border-l-4 border-slate-200">
-                        &quot;{occ.sentence}&quot;
-                        <span className="block text-xs text-slate-400 mt-2 not-italic font-bold uppercase tracking-wider">
-                          From: {occ.book}
-                        </span>
+              ) : (
+                <>
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <h3 className="text-4xl font-bold text-indigo-600 mb-1">{selectedWord?.word}</h3>
+                      <div className="flex items-center gap-3">
+                        <span className="text-blue-500 font-bold text-lg">{selectedWord?.phonetic}</span>
+                        <button
+                          onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
+                          className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
+                        >
+                          <Volume2 className="w-5 h-5" />
+                        </button>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
-              )}
 
-              <button
-                onClick={addToVocab}
-                className="clay-button clay-primary w-full py-4 text-xl flex items-center justify-center gap-3 shadow-indigo-200"
-              >
-                <Plus className="w-6 h-6" />
-                Add to My Word Bank
-              </button>
+                  <div className="mb-8">
+                    <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full" />
+                      What it means
+                    </h4>
+                    <p className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line">
+                      {selectedWord?.meaning}
+                    </p>
+                  </div>
+
+                  {selectedWord?.occurrences && selectedWord.occurrences.length > 0 && (
+                    <div className="mb-8">
+                      <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <History className="w-4 h-4" />
+                        Seen before
+                      </h4>
+                      <div className="max-h-32 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                        {selectedWord.occurrences.map((occ, idx) => (
+                          <div key={idx} className="p-4 bg-slate-50 rounded-2xl text-slate-600 italic border-l-4 border-slate-200">
+                            &quot;{occ.sentence}&quot;
+                            <span className="block text-xs text-slate-400 mt-2 not-italic font-bold uppercase tracking-wider">
+                              From: {occ.book}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={addToVocab}
+                    disabled={!selectedWord?.id}
+                    className="clay-button clay-primary w-full py-4 text-xl flex items-center justify-center gap-3 shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-6 h-6" />
+                    Add to My Word Bank
+                  </button>
+                </>
+              )}
             </motion.div>
           </>
         )}
