@@ -11,13 +11,11 @@ import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, Di
 export default function Home() {
   const [view, setView] = useState<'library' | 'reader' | 'review'>('library');
   const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'pdf' | 'text'>('pdf');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handleSelectBook = (id: number) => {
     setSelectedBookId(id);
     setView('reader');
-    setViewMode('pdf'); // Reset to PDF when opening a new book
   };
 
   return (
@@ -47,20 +45,6 @@ export default function Home() {
                   title="Go Back"
                 >
                   <ArrowLeft className="w-5 h-5" />
-                </button>
-                
-                <button 
-                  onClick={() => setViewMode(viewMode === 'pdf' ? 'text' : 'pdf')}
-                  className={`flex items-center gap-2 px-4 py-2 bg-white border shadow-sm rounded-full font-bold transition-all hover:scale-105 active:scale-95 ${
-                    viewMode === 'pdf' 
-                      ? 'border-indigo-200 text-indigo-600' 
-                      : 'border-orange-200 text-orange-600'
-                  }`}
-                >
-                  {viewMode === 'pdf' ? <BookOpen className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
-                  <span className="text-xs uppercase tracking-wider font-bold">
-                    {viewMode === 'pdf' ? 'Reading Mode' : 'Text Mode'}
-                  </span>
                 </button>
               </div>
             )}
@@ -122,8 +106,6 @@ export default function Home() {
             <Reader 
               bookId={selectedBookId} 
               onBack={() => setView('library')}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
             />
           </div>
         )}

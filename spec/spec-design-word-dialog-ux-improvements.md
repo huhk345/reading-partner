@@ -4,6 +4,7 @@ version: 1.0
 date_created: 2026-03-14
 owner: Reading Partner Team
 tags: [features, ui, ux, dictionary]
+status: done
 ---
 
 # Introduction
