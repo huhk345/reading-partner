@@ -58,11 +58,19 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       }}
     >
       {pageData.words.map((word, idx) => {
+        // Only render words that contain at least one alphabet character
+        if (!/[a-zA-Z]/.test(word.text)) {
+          return null;
+        }
+
         const [x0, y0, x1, y1] = word.bbox;
         
         const sentence = findSentenceForWord(word.text);
         const showPlayButton = sentence && isFirstWordOfSentence(word.text, idx);
         
+        // Remove symbols (anything not a word character or space) for the hover text
+        const hoverText = word.text.replace(/[^\w\s'’]|_/g, "").trim();
+
         return (
           <div
             key={`${word.text}-${idx}`}
@@ -91,7 +99,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
               </button>
             )}
             <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
-                {word.text}
+                {hoverText}
             </div>
           </div>
         );
@@ -190,10 +198,6 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         // Full width since we removed padding (px-0) and the sidebar
         const width = scrollContainerRef.current.clientWidth - 16; // Small buffer for scrollbar
         setContainerWidth(width);
-        
-        if (scale === 1.0) {
-            setScale(1.0);
-        }
       }
     };
 
@@ -202,7 +206,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     updateWidth();
 
     return () => observer.disconnect();
-  }, [scrollContainerRef, scale]);
+  }, [book, scale]);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -241,7 +245,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     const container = scrollContainerRef.current;
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [book?.type, currentPage]);
+  }, [book, currentPage]);
 
   const scrollToPage = (pageNum: number) => {
     if (!scrollContainerRef.current) return;
@@ -253,7 +257,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const handleWordClick = async (word: string, sentenceId?: number) => {
     // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
-    const cleanWord = word.replace(/[^\w\s']|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
     // Open dialog immediately with loading state (REQ-001)
@@ -364,7 +368,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel(); // Stop current speech
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
+    utterance.rate = 0.8;
     window.speechSynthesis.speak(utterance);
   };
 
@@ -501,18 +505,27 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               </div>
               {book.sentences?.length ? book.sentences.map((sentence) => (
                 <span key={sentence.id} className="group/sentence hover:bg-slate-50 rounded px-2 py-1 -mx-2 transition-colors relative">
-                  {sentence.text.split(/\s+/).map((word, wIdx) => (
-                    <span
-                      key={wIdx}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleWordClick(word, sentence.id);
-                      }}
-                      className="cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 px-0.5 rounded transition-all inline-block"
-                    >
-                      {word}{' '}
-                    </span>
-                  ))}
+                  {sentence.text.split(/\s+/).map((word, wIdx) => {
+                    // Only show words that contain at least one alphabet character
+                    if (!/[a-zA-Z]/.test(word)) return null;
+                    
+                    // Remove symbols for cleaner reading view
+                    const cleanDisplayWord = word.replace(/[^\w\s'’]|_/g, "").trim();
+                    if (!cleanDisplayWord) return null;
+
+                    return (
+                      <span
+                        key={wIdx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleWordClick(word, sentence.id);
+                        }}
+                        className="cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 px-0.5 rounded transition-all inline-block"
+                      >
+                        {cleanDisplayWord}{' '}
+                      </span>
+                    );
+                  })}
                   <button 
                     onClick={() => speak(sentence.text)}
                     className="opacity-0 group-hover/sentence:opacity-100 absolute -right-12 top-1/2 -translate-y-1/2 p-2 text-slate-300 hover:text-indigo-500 transition-all"

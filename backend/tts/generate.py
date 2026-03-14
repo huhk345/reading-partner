@@ -16,6 +16,9 @@ class TTSEngine:
             from TTS.api import TTS
             print(f"Loading TTS model: {self._model_name}...")
             self._tts = TTS(model_name=self._model_name, gpu=False)
+            # Slow down the TTS speed a little bit (1.1x duration)
+            if hasattr(self._tts, 'synthesizer') and hasattr(self._tts.synthesizer, 'tts_model'):
+                self._tts.synthesizer.tts_model.length_scale = 1.1
             print("TTS model loaded successfully!")
         return self._tts
 
