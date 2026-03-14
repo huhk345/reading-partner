@@ -19,6 +19,7 @@ from database import SessionLocal, init_db, Book, Sentence, Word, WordOccurrence
 from parser.pdf_parser import parse_pdf
 from parser.epub_parser import parse_epub
 from parser.llm_parser import get_book_info_and_clean_text, split_sentences_llm
+from parser.ocr_corrector import correct_ocr_errors
 from dictionary.lookup import lookup_word
 from srs.sm2 import update_sm2
 from tts.generate import tts_engine
@@ -71,6 +72,9 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     if llm_info:
         title = llm_info.get("title", file.filename)
         clean_text = llm_info.get("cleaned_sample", full_text)
+    
+    # Correct OCR errors by comparing full_text with clean_text
+    pages_data = correct_ocr_errors(full_text, clean_text, pages_data)
     
     # Improved sentence splitting via regex on cleaned text
     sentences = split_sentences_llm(clean_text)
@@ -173,6 +177,9 @@ async def reparse_book(book_id: int, db: Session = Depends(get_db)):
     else:
         book.clean_text = full_text
 
+    # Correct OCR errors by comparing full_text with clean_text
+    pages_data = correct_ocr_errors(full_text, book.clean_text, pages_data)
+    
     # Improved sentence splitting via regex on cleaned text
     sentences = split_sentences_llm(book.clean_text)
     

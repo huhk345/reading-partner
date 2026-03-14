@@ -51,7 +51,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
   return (
     <div 
-      className="absolute top-0 left-0 z-[60] pointer-events-none overflow-hidden"
+      className="absolute top-0 left-0 z-40 pointer-events-none overflow-hidden"
       style={{ 
         width: renderedWidth, 
         height: renderedHeight 
