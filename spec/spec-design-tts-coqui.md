@@ -5,6 +5,7 @@ date_created: 2026-03-14
 last_updated: 2026-03-14
 owner: Gemini CLI
 tags: [features, tts, backend, audio]
+status: done
 ---
 
 # Introduction
@@ -26,3 +27,10 @@ The goal is to enable users to hear the pronunciation of sentences within the re
 - **AC-001**: Given I am reading a book, When I hover over the first word of a sentence, Then a speaker icon appears nearby.
 - **AC-002**: Given I click the speaker icon, Then I hear a natural-sounding voice read the sentence aloud.
 - **AC-003**: Audio generation and playback start within 2 seconds.
+
+## 5. Implementation Notes
+- Backend uses Coqui TTS library with VITS model (tts_models/en/vctk/vits)
+- Model is loaded lazily on first request and cached in memory
+- Generated audio files are cached in `uploads/tts/` directory with MD5 hash as filename
+- Play button appears on hover over first word of each sentence in PDF mode
+- Frontend falls back to browser speechSynthesis if TTS fails
