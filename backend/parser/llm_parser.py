@@ -36,7 +36,6 @@ def call_openrouter(messages, model=DEFAULT_MODEL, temperature=0.7, max_tokens=5
             timeout=60
         )
         if response.status_code == 200:
-            print(f"OpenRouter API response: {response.json()}")
             return response.json()['choices'][0]['message']['content']
         else:
             print(f"OpenRouter API error: {response.status_code} - {response.text}")
