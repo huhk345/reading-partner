@@ -325,6 +325,38 @@ def get_review_list(db: Session = Depends(get_db)):
             })
     return result
 
+@app.get("/api/vocab/all")
+def get_all_vocab(db: Session = Depends(get_db)):
+    # Get all words in the vocabulary
+    reviews = db.query(Vocab).all()
+    
+    result = []
+    for r in reviews:
+        w = db.query(Word).filter(Word.id == r.word_id).first()
+        if w:
+            # Fetch occurrences for context
+            occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == w.id).all()
+            occurrence_contexts = []
+            for occ in occurrences:
+                s = db.query(Sentence).filter(Sentence.id == occ.sentence_id).first()
+                b = db.query(Book).filter(Book.id == occ.book_id).first()
+                if s and b:
+                    occurrence_contexts.append({"book": b.title, "sentence": s.text})
+                    
+            result.append({
+                "vocab_id": r.id,
+                "word_id": w.id,
+                "word": w.word,
+                "phonetic": w.phonetic,
+                "meaning": w.meaning,
+                "audio_url": w.audio_url,
+                "interval": r.interval,
+                "repetition": r.repetition,
+                "ef": r.ef,
+                "occurrences": occurrence_contexts[:3]
+            })
+    return result
+
 @app.post("/api/vocab/review")
 def submit_review(vocab_id: int, quality: int, db: Session = Depends(get_db)):
     vocab = db.query(Vocab).filter(Vocab.id == vocab_id).first()

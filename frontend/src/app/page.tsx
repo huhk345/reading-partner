@@ -5,7 +5,7 @@ import BookList from '@/components/BookList';
 import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
-import { ArrowLeft, GraduationCap, Sparkles, BookOpen, Settings } from 'lucide-react';
+import { ArrowLeft, GraduationCap, Sparkles, BookOpen, Settings, Star, Heart } from 'lucide-react';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/Dialog';
 
 export default function Home() {
@@ -19,29 +19,37 @@ export default function Home() {
   };
 
   return (
-    <main className="h-screen flex flex-col bg-slate-50 overflow-hidden">
+    <main className="h-screen flex flex-col bg-gradient-to-b from-green-50 to-blue-50 overflow-hidden">
+      {/* Decorative floating elements */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-20 left-10 w-20 h-20 bg-green-200 rounded-full opacity-30 animate-pulse"></div>
+        <div className="absolute top-40 right-20 w-16 h-16 bg-yellow-200 rounded-full opacity-30 animate-bounce" style={{ animationDuration: '3s' }}></div>
+        <div className="absolute bottom-40 left-1/4 w-12 h-12 bg-blue-200 rounded-full opacity-30 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+        <div className="absolute top-1/3 right-1/3 w-8 h-8 bg-purple-200 rounded-full opacity-40 animate-bounce" style={{ animationDelay: '1s', animationDuration: '4s' }}></div>
+      </div>
+
       {/* Playful Header */}
-      <header className="bg-white border-b border-slate-100 z-50 sticky top-0 shadow-sm">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-green-100 z-50 sticky top-0 shadow-sm">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div 
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => setView('library')}
             >
-              <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center text-white shadow-lg rotate-[-5deg] group-hover:rotate-0 transition-transform">
-                <BookOpen className="w-6 h-6" />
+              <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center text-white shadow-lg rotate-[-5deg] group-hover:rotate-0 group-hover:scale-110 transition-all duration-300">
+                <BookOpen className="w-7 h-7" />
               </div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent hidden sm:block">
+              <h1 className="text-xl font-bold bg-gradient-to-r from-green-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent hidden sm:block">
                 Reading Partner
               </h1>
             </div>
 
             {view === 'reader' && (
               <div className="flex items-center gap-3 animate-in slide-in-from-left-4 duration-300">
-                <div className="w-px h-8 bg-slate-200 mx-1" />
+                <div className="w-px h-8 bg-green-200 mx-1" />
                 <button 
                   onClick={() => setView('library')}
-                  className="w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center transition-all text-slate-600 active:scale-90"
+                  className="w-10 h-10 bg-green-100 hover:bg-green-200 rounded-xl flex items-center justify-center transition-all text-green-700 active:scale-90"
                   title="Go Back"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -53,49 +61,56 @@ export default function Home() {
           <nav className="flex items-center gap-2">
             <button 
               onClick={() => setIsDialogOpen(true)}
-              className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              className="p-2.5 text-green-600 hover:bg-green-100 rounded-xl transition-colors"
               title="Settings"
             >
               <Settings className="w-5 h-5" />
             </button>
             <button 
               onClick={() => setView('library')}
-              className={`px-4 py-2 rounded-xl font-bold transition-colors text-sm ${view === 'library' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'library' ? 'bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105' : 'text-green-700 hover:bg-green-100'}`}
             >
               Library
             </button>
             <button 
               onClick={() => setView('review')}
-              className={`px-4 py-2 rounded-xl font-bold transition-colors text-sm ${view === 'review' ? 'bg-orange-100 text-orange-700' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'review' ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-200 hover:shadow-xl hover:shadow-yellow-300 hover:scale-105' : 'text-amber-600 hover:bg-yellow-100'}`}
             >
-              Review
+              Word Wall
             </button>
           </nav>
         </div>
       </header>
 
-      <div className={`flex-1 overflow-hidden ${view === 'reader' ? '' : 'max-w-6xl mx-auto p-6 w-full'}`}>
+      <div className={`flex-1 overflow-y-auto ${view === 'reader' ? '' : 'max-w-6xl mx-auto p-6 w-full'} relative z-10`}>
         {view === 'library' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-3xl flex items-center gap-2">
-                  <Sparkles className="text-yellow-500" />
-                  My Magic Library
+                <h2 className="text-4xl flex items-center gap-3 mb-2">
+                  <Sparkles className="text-yellow-500 w-8 h-8 animate-pulse" />
+                  <span className="bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent">My Magic Library</span>
                 </h2>
-                <p className="text-slate-500 text-lg">Pick a book and start your adventure!</p>
+          <p className="text-green-600 text-lg font-medium flex items-center gap-2">
+            <Heart className="w-5 h-5 text-red-400 animate-pulse" />
+            Pick a book and start your adventure!
+          </p>
+              </div>
+              <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                <Star className="w-5 h-5 text-yellow-500" />
+                <span className="text-sm font-bold text-amber-600">Keep your streak going!</span>
               </div>
             </div>
             
             <BookList onSelectBook={handleSelectBook} />
             
-            <div className="fixed bottom-8 right-8 flex flex-col gap-4">
+            <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-20">
               <button
                 onClick={() => setView('review')}
-                className="clay-button clay-accent py-4 px-8 text-xl group shadow-2xl"
+                className="clay-button clay-accent py-4 px-8 text-xl group shadow-2xl hover:scale-110 transition-transform"
               >
-                <GraduationCap className="w-7 h-7 mr-2 group-hover:scale-125 transition-transform" />
-                Start Reviewing!
+                <GraduationCap className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
+                Visit Word Wall
               </button>
             </div>
           </div>
@@ -119,34 +134,36 @@ export default function Home() {
 
       <Dialog isOpen={isDialogOpen} onClose={() => setIsDialogOpen(false)}>
         <DialogHeader>
-          <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm border-2 border-indigo-200">
-            <Settings className="w-6 h-6" />
+          <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-green-200">
+            <Settings className="w-7 h-7" />
           </div>
-          <DialogTitle>Magic Settings</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
+            Magic Settings
+          </DialogTitle>
+          <DialogDescription className="text-green-600">
             Customize your reading adventure.
           </DialogDescription>
         </DialogHeader>
         <DialogContent className="space-y-4">
-          <div className="clay-card p-4 bg-slate-50 border-2 border-slate-100">
-            <h4 className="font-bold text-slate-700 mb-2">Display Mode</h4>
+          <div className="clay-card p-4 bg-green-50 border-2 border-green-100">
+            <h4 className="font-bold text-green-700 mb-2">Display Mode</h4>
             <div className="flex gap-2">
-              <button className="flex-1 py-2 px-3 bg-white border-2 border-indigo-500 text-indigo-700 rounded-xl font-bold shadow-sm">
+              <button className="flex-1 py-3 px-4 bg-white border-2 border-green-500 text-green-700 rounded-xl font-bold shadow-sm hover:bg-green-50 hover:scale-105 transition-all">
                 Default
               </button>
-              <button className="flex-1 py-2 px-3 bg-white border-2 border-slate-200 text-slate-500 rounded-xl font-bold hover:border-slate-300 transition-colors">
+              <button className="flex-1 py-3 px-4 bg-white border-2 border-green-200 text-green-500 rounded-xl font-bold hover:border-green-300 transition-colors">
                 Cozy
               </button>
             </div>
           </div>
-          <p className="text-slate-400 text-sm text-center font-medium italic">
-            "Every great story starts with a single click."
+          <p className="text-green-400 text-sm text-center font-medium italic">
+            Every great story starts with a single click.
           </p>
         </DialogContent>
         <DialogFooter>
           <button 
             onClick={() => setIsDialogOpen(false)}
-            className="clay-button clay-primary w-full sm:w-auto"
+            className="clay-button clay-primary w-full sm:w-auto hover:scale-105 transition-transform"
           >
             Got it!
           </button>

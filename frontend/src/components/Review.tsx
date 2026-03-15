@@ -2,32 +2,163 @@
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { ArrowLeft, Check, X, Info, Volume2, Sparkles, Trophy, History } from 'lucide-react';
+import { ArrowLeft, Check, Volume2, Sparkles, History, RotateCw } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Dialog, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription, 
-  DialogFooter 
-} from './Dialog';
 
 interface ReviewProps {
   onBack: () => void;
 }
 
+const ClayWordCard = ({ 
+  review,
+  index
+}: { 
+  review: VocabReview; 
+  index: number;
+}) => {
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  const speak = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (review.audio_url) {
+      const audio = new Audio(review.audio_url);
+      audio.play().catch(() => fallbackSpeak(review.word));
+    } else {
+      fallbackSpeak(review.word);
+    }
+  };
+
+  const fallbackSpeak = (text: string) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Modern "Cool" palette for cards
+  const colors = [
+    'from-indigo-500/20 to-blue-500/20 text-indigo-700 border-indigo-100',
+    'from-purple-500/20 to-pink-500/20 text-purple-700 border-purple-100',
+    'from-emerald-500/20 to-teal-500/20 text-emerald-700 border-emerald-100',
+    'from-orange-500/20 to-yellow-500/20 text-orange-700 border-orange-100',
+    'from-blue-500/20 to-cyan-500/20 text-blue-700 border-blue-100',
+  ];
+  const cardStyle = colors[index % colors.length];
+
+  return (
+    <motion.div 
+      layout
+      className="break-inside-avoid mb-6 perspective-1000 cursor-pointer group"
+      onClick={() => setIsFlipped(!isFlipped)}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <motion.div
+        layout
+        animate={{ rotateY: isFlipped ? 180 : 0 }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 150, 
+          damping: 20,
+          mass: 0.8,
+          layout: { duration: 0.4, type: "spring", stiffness: 200, damping: 25 }
+        }}
+        className="w-full relative preserve-3d"
+      >
+        {/* 
+          Front Side: Fixed height for uniformity 
+          Back Side: Auto height based on content
+          The container will animate height changes due to the layout prop.
+        */}
+        
+        {/* Front of Card - Uniform height (e.g., 180px) */}
+        <div 
+          className={`
+            backface-hidden rounded-[32px] p-6 flex flex-col items-center justify-center text-center border-2 
+            bg-gradient-to-br backdrop-blur-md 
+            shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,0.7),inset_0_-4px_8px_rgba(0,0,0,0.05)] 
+            ${cardStyle}
+            ${isFlipped ? 'invisible h-0' : 'h-[180px] w-full'}
+          `}
+        >
+          <div className="absolute top-0 left-0 w-full h-1/2 bg-white/30 rounded-t-[32px] pointer-events-none" style={{ clipPath: 'ellipse(100% 100% at 50% 0%)' }} />
+          
+          <button
+            onClick={speak}
+            className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-white/80 text-indigo-500 hover:scale-110 active:scale-90 transition-all flex items-center justify-center shadow-sm border border-white/50 z-10"
+          >
+            <Volume2 className="w-4 h-4" />
+          </button>
+          
+          <h3 className="text-2xl md:text-3xl font-black mb-1 break-words w-full drop-shadow-sm font-baloo">
+            {review.word}
+          </h3>
+          <p className="font-bold text-[10px] opacity-60">
+            {review.phonetic || '/.../'}
+          </p>
+          
+          <div className="mt-4 opacity-20 group-hover:opacity-100 group-hover:text-indigo-500 transition-all duration-500 scale-75 group-hover:scale-100">
+            <RotateCw className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Back of Card - Auto height, absolute positioned but occupying space when flipped */}
+        <div 
+          className={`
+            backface-hidden rounded-[32px] bg-white p-6 flex flex-col border-2 border-slate-100 
+            shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,1)]
+            ${!isFlipped ? 'invisible absolute inset-0 rotate-y-180' : 'relative rotate-y-180 h-auto min-h-[180px] w-full'}
+          `}
+          style={{ transform: 'rotateY(180deg)' }}
+        >
+          <div className="flex-1 space-y-4">
+            <div className="text-center">
+              <h4 className="text-xl font-black text-slate-800 leading-tight font-baloo">{review.word}</h4>
+              <p className="text-indigo-400 font-bold text-[10px] uppercase tracking-widest">{review.phonetic}</p>
+            </div>
+            
+            <div className="h-0.5 bg-gradient-to-r from-transparent via-slate-100 to-transparent w-full" />
+            
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-black text-indigo-300 uppercase tracking-widest px-2.5 py-0.5 bg-indigo-50 rounded-full">Meaning</span>
+              <p className="text-slate-600 font-medium text-[13px] leading-relaxed italic px-1">
+                {review.meaning}
+              </p>
+            </div>
+
+            {review.occurrences && review.occurrences.length > 0 && (
+              <div className="pt-1">
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                  <History className="w-3 h-3 text-indigo-300" />
+                  Context
+                </h5>
+                <div className="p-3 rounded-2xl bg-slate-50/50 border border-slate-100 italic text-[11px] text-slate-500 leading-normal relative">
+                  &quot;{review.occurrences[0].sentence}&quot;
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-4 pt-4 border-t border-slate-50 flex flex-col items-center">
+            <div className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+              FLIP BACK
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [showAnswer, setShowAnswer] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isFinished, setIsFinished] = useState(false);
 
   const fetchReviews = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('http://localhost:8000/api/vocab/review');
+      const response = await axios.get('http://localhost:8000/api/vocab/all');
       setReviews(response.data);
     } catch (error) {
       console.error('Error fetching reviews:', error);
@@ -40,228 +171,91 @@ export default function Review({ onBack }: ReviewProps) {
     fetchReviews();
   }, []);
 
-  const handleReview = async (quality: number) => {
-    const current = reviews[currentIndex];
-    try {
-      await axios.post('http://localhost:8000/api/vocab/review', null, {
-        params: { vocab_id: current.vocab_id, quality }
-      });
-      setShowAnswer(false);
-      if (currentIndex < reviews.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-      } else {
-        setIsFinished(true);
-      }
-    } catch (error) {
-      console.error('Error submitting review:', error);
-    }
-  };
-
-  const speak = (text: string, audioUrl?: string) => {
-    if (audioUrl) {
-      const audio = new Audio(audioUrl);
-      audio.play().catch(e => {
-        console.error("Error playing audio file, falling back to synthesis", e);
-        fallbackSpeak(text);
-      });
-      return;
-    }
-    fallbackSpeak(text);
-  };
-
-  const fallbackSpeak = (text: string) => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    window.speechSynthesis.speak(utterance);
-  };
-
   if (loading) return (
-    <div className="flex flex-col items-center justify-center p-24 gap-4">
-      <div className="w-16 h-16 border-8 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
-      <p className="text-xl font-bold text-orange-600">Gathering your magic words...</p>
+    <div className="flex flex-col items-center justify-center p-24 gap-6">
+      <div className="relative">
+        <div className="w-20 h-20 border-8 border-indigo-100 border-t-indigo-500 rounded-full animate-spin shadow-inner" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Sparkles className="w-6 h-6 text-indigo-400 animate-pulse" />
+        </div>
+      </div>
+      <p className="text-xl font-black text-indigo-600 font-baloo tracking-tight">Summoning your Word Wall...</p>
     </div>
   );
 
   if (reviews.length === 0) {
     return (
-      <div className="max-w-md mx-auto py-24 text-center space-y-8 animate-in zoom-in-95 duration-500">
+      <div className="max-w-md mx-auto py-24 text-center space-y-8 animate-in zoom-in-95 duration-700">
         <div className="relative inline-block">
-          <div className="w-24 h-24 clay-card bg-green-100 flex items-center justify-center text-green-600">
-            <Check className="w-12 h-12" />
+          <div className="w-32 h-32 rounded-[40px] bg-white shadow-clay-lg border-2 border-green-50 flex items-center justify-center text-green-500">
+            <Check className="w-16 h-16" />
           </div>
-          <Sparkles className="absolute -top-2 -right-2 text-yellow-500 animate-pulse" />
+          <motion.div 
+            animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
+            transition={{ repeat: Infinity, duration: 4 }}
+            className="absolute -top-4 -right-4 w-12 h-12 rounded-2xl bg-yellow-400 flex items-center justify-center text-white shadow-lg"
+          >
+            <Sparkles className="w-6 h-6" />
+          </motion.div>
         </div>
-        <h2 className="text-3xl font-bold text-slate-800">You're a Star! 🌟</h2>
-        <p className="text-slate-500 text-xl font-medium">No words left to review today. You've mastered them all!</p>
-        <button onClick={onBack} className="clay-button clay-primary w-full py-4 text-xl">
-          Back to Library
+        <div>
+          <h2 className="text-4xl font-black text-slate-800 mb-4 font-baloo">Pure Magic! ✨</h2>
+          <p className="text-slate-500 text-xl font-medium px-8">Your Word Wall is waiting for its first collection. Start reading to find magical words!</p>
+        </div>
+        <button onClick={onBack} className="clay-button clay-primary w-full py-5 text-xl shadow-xl">
+          Start Reading Adventure
         </button>
       </div>
     );
   }
 
-  const current = reviews[currentIndex];
-  const progress = ((currentIndex + 1) / reviews.length) * 100;
-
   return (
-    <div className="max-w-2xl mx-auto flex flex-col min-h-[600px] py-6">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-6xl mx-auto flex flex-col min-h-screen py-10 px-6">
+      {/* Dynamic Header */}
+      <div className="flex items-center justify-between mb-12 sticky top-4 z-20 bg-white/70 backdrop-blur-xl py-5 rounded-[32px] px-8 border border-white shadow-[0_8px_32px_rgba(0,0,0,0.05)]">
         <button 
           onClick={onBack} 
-          className="w-12 h-12 clay-card flex items-center justify-center hover:bg-slate-50 transition-colors"
+          className="w-12 h-12 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center hover:bg-slate-50 hover:scale-105 active:scale-95 transition-all text-slate-600"
         >
-          <ArrowLeft className="w-6 h-6 text-slate-600" />
+          <ArrowLeft className="w-6 h-6" />
         </button>
+        
         <div className="flex flex-col items-center gap-1">
-          <div className="text-sm font-bold text-slate-400 uppercase tracking-widest">Progress</div>
-          <div className="text-xl font-bold text-indigo-600">
-            {currentIndex + 1} <span className="text-slate-300 mx-1">/</span> {reviews.length}
+          <h2 className="text-3xl font-black text-slate-800 font-baloo tracking-tight leading-none">Word Wall</h2>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] opacity-70">{reviews.length} Magical Items</p>
           </div>
         </div>
-        <div className="w-12" />
+
+        <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-500 shadow-inner">
+          <Sparkles className="w-6 h-6" />
+        </div>
       </div>
 
-      <div className="w-full h-4 bg-slate-200 rounded-full mb-12 overflow-hidden shadow-inner">
-        <motion.div 
-          initial={{ width: 0 }}
-          animate={{ width: `${progress}%` }}
-          className="h-full bg-gradient-to-r from-indigo-500 to-blue-400 rounded-full shadow-lg"
-        />
-      </div>
-
-      <div className="flex-1 flex flex-col items-center">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={current.vocab_id + (showAnswer ? '-ans' : '-q')}
-            initial={{ opacity: 0, scale: 0.8, rotateY: 90 }}
-            animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-            exit={{ opacity: 0, scale: 0.8, rotateY: -90 }}
-            transition={{ type: "spring", damping: 15 }}
-            className="w-full aspect-[4/3] clay-card bg-white p-12 flex flex-col items-center justify-center text-center relative group"
-          >
-            <h3 className="text-5xl font-black text-slate-800 mb-4 tracking-tight drop-shadow-sm">
-              {current.word}
-            </h3>
-            
-            {showAnswer && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-6"
-              >
-                <div className="text-2xl font-bold text-indigo-500 flex items-center justify-center gap-2">
-                  {current.phonetic}
-                  <button
-                    onClick={() => speak(current.word, current.audio_url)}
-                    className="w-10 h-10 clay-card bg-indigo-50 text-indigo-600 flex items-center justify-center hover:scale-110 transition-transform"
-                  >
-                    <Volume2 className="w-5 h-5" />
-                  </button>
-                </div>
-                <div className="w-24 h-2 bg-slate-100 mx-auto rounded-full" />
-                <p className="text-2xl text-slate-600 leading-relaxed max-w-md font-medium">
-                  {current.meaning}
-                </p>
-                
-                {current.occurrences && current.occurrences.length > 0 && (
-                  <div className="mt-8 pt-6 border-t border-slate-100 w-full max-w-md text-left">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <History className="w-3 h-3" />
-                      Context
-                    </h4>
-                    <div className="space-y-3">
-                      {current.occurrences.map((occ, idx) => (
-                        <div key={idx} className="p-3 bg-slate-50 rounded-xl text-slate-500 italic text-sm">
-                          "{occ.sentence}"
-                          <span className="block text-[10px] text-slate-300 mt-1 not-italic font-bold uppercase tracking-wider">
-                            {occ.book}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            )}
-
-            {!showAnswer && (
-              <button
-                onClick={() => setShowAnswer(true)}
-                className="clay-button clay-accent mt-12 py-4 px-12 text-2xl"
-              >
-                Flip Card!
-              </button>
-            )}
-            
-            {!showAnswer && (
-              <button
-                onClick={() => speak(current.word, current.audio_url)}
-                className="absolute top-6 right-6 w-12 h-12 clay-card bg-slate-50 text-slate-400 hover:text-indigo-500 transition-colors flex items-center justify-center"
-              >
-                <Volume2 className="w-6 h-6" />
-              </button>
-            )}
-          </motion.div>
+      {/* Grid Wall with Masonry Layout */}
+      <div className="columns-2 md:columns-3 lg:columns-4 gap-6 md:gap-8 pb-20">
+        <AnimatePresence>
+          {reviews.map((review, idx) => (
+            <motion.div
+              layout
+              key={review.vocab_id}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ 
+                duration: 0.4,
+                delay: idx * 0.03,
+                layout: { duration: 0.4, type: "spring", stiffness: 200, damping: 25 }
+              }}
+            >
+              <ClayWordCard 
+                review={review} 
+                index={idx}
+              />
+            </motion.div>
+          ))}
         </AnimatePresence>
-
-        {showAnswer && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full mt-12"
-          >
-            <button 
-              onClick={() => handleReview(0)} 
-              className="clay-card p-4 bg-red-50 hover:bg-red-100 text-red-600 border-red-200 transition-colors flex flex-col items-center gap-1 shadow-red-100"
-            >
-              <span className="font-black text-xl">Oops!</span>
-              <span className="text-xs font-bold uppercase opacity-60">Try Again</span>
-            </button>
-            <button 
-              onClick={() => handleReview(3)} 
-              className="clay-card p-4 bg-orange-50 hover:bg-orange-100 text-orange-600 border-orange-200 transition-colors flex flex-col items-center gap-1 shadow-orange-100"
-            >
-              <span className="font-black text-xl">Hard</span>
-              <span className="text-xs font-bold uppercase opacity-60">Need help</span>
-            </button>
-            <button 
-              onClick={() => handleReview(4)} 
-              className="clay-card p-4 bg-green-50 hover:bg-green-100 text-green-600 border-green-200 transition-colors flex flex-col items-center gap-1 shadow-green-100"
-            >
-              <span className="font-black text-xl">Good</span>
-              <span className="text-xs font-bold uppercase opacity-60">I Got It!</span>
-            </button>
-            <button 
-              onClick={() => handleReview(5)} 
-              className="clay-card p-4 bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200 transition-colors flex flex-col items-center gap-1 shadow-blue-100"
-            >
-              <span className="font-black text-xl">Easy</span>
-              <span className="text-xs font-bold uppercase opacity-60">Mastered!</span>
-            </button>
-          </motion.div>
-        )}
       </div>
-
-      <Dialog 
-        isOpen={isFinished} 
-        onClose={onBack}
-      >
-        <DialogHeader>
-          <DialogTitle>Amazing! You finished all your reviews! 🏆</DialogTitle>
-          <DialogDescription>
-            You've mastered all your words for today. Keep it up!
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <button
-            onClick={onBack}
-            className="clay-button clay-primary px-6 py-2"
-          >
-            OK
-          </button>
-        </DialogFooter>
-      </Dialog>
     </div>
   );
 }
