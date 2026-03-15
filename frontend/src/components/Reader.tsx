@@ -116,8 +116,10 @@ interface ReaderProps {
 export default function Reader({ bookId, onBack }: ReaderProps) {
   const [book, setBook] = useState<Book | null>(null);
   const [selectedWord, setSelectedWord] = useState<WordDefinition | null>(null);
+  const [inputWord, setInputWord] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoadingWord, setIsLoadingWord] = useState(false);
+  const [lastSentenceId, setLastSentenceId] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -255,16 +257,11 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  const handleWordClick = async (word: string, sentenceId?: number) => {
-    // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
+  const lookupWord = async (word: string, sentenceId?: number) => {
     const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
-    // Open dialog immediately with loading state (REQ-001)
-    setIsDialogOpen(true);
     setIsLoadingWord(true);
-    setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
-
     try {
       const response = await axios.get(`http://localhost:8000/api/dict`, {
         params: { 
@@ -280,6 +277,34 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     } finally {
       setIsLoadingWord(false);
     }
+  };
+
+  // Debounced lookup when inputWord changes
+  useEffect(() => {
+    if (!isDialogOpen || !inputWord) return;
+    
+    // Don't re-lookup if it's the same word as selectedWord
+    if (selectedWord && inputWord.toLowerCase() === selectedWord.word.toLowerCase()) return;
+
+    const delayDebounceFn = setTimeout(() => {
+      lookupWord(inputWord, lastSentenceId);
+    }, 600);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [inputWord, isDialogOpen, lastSentenceId]);
+
+  const handleWordClick = async (word: string, sentenceId?: number) => {
+    // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
+    const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!cleanWord) return;
+
+    // Open dialog immediately with loading state (REQ-001)
+    setIsDialogOpen(true);
+    setInputWord(cleanWord);
+    setLastSentenceId(sentenceId);
+    setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
+    
+    await lookupWord(cleanWord, sentenceId);
   };
 
   const handlePdfClick = (e: React.MouseEvent) => {
@@ -620,28 +645,36 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                 <X className="w-6 h-6" />
               </button>
 
+              <div className="flex justify-between items-start mb-6">
+                <div className="w-full mr-8">
+                  <input
+                    type="text"
+                    value={inputWord}
+                    onChange={(e) => setInputWord(e.target.value)}
+                    className="text-4xl font-bold text-indigo-600 mb-1 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-lg w-full transition-all"
+                    placeholder="Type a word..."
+                  />
+                  {!isLoadingWord && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-blue-500 font-bold text-lg">{selectedWord?.phonetic}</span>
+                      <button
+                        onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
+                        className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
+                      >
+                        <Volume2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {isLoadingWord ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                  <p className="text-slate-500 font-medium">Looking up "{selectedWord?.word}"...</p>
+                  <p className="text-slate-500 font-medium">Looking up "{inputWord}"...</p>
                 </div>
               ) : (
                 <>
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <h3 className="text-4xl font-bold text-indigo-600 mb-1">{selectedWord?.word}</h3>
-                      <div className="flex items-center gap-3">
-                        <span className="text-blue-500 font-bold text-lg">{selectedWord?.phonetic}</span>
-                        <button
-                          onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
-                          className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
-                        >
-                          <Volume2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="mb-8">
                     <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                       <span className="w-2 h-2 bg-indigo-400 rounded-full" />

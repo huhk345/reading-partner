@@ -1,8 +1,9 @@
 ---
 title: Editable Word Lookup Dialog
-version: 1.0
+version: 1.1
 date_created: 2026-03-14
-last_updated: 2026-03-14
+last_updated: 2026-03-15
+status: completed
 owner: Gemini CLI
 tags: [features, ui, ux, dictionary]
 ---
