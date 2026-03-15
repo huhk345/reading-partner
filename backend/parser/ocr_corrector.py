@@ -132,7 +132,11 @@ def correct_ocr_errors(full_text, clean_text, pages_data):
     
     ocr_corrections = {}
     clean_words = clean_text.lower().split()
-    
+
+    for word_text in all_page_words:
+        if word_text.lower() == '|':
+            ocr_corrections['|'] = 'I'
+
     for word_text in all_page_words:
         word_clean = re.sub(r'[^a-zA-Z]', '', word_text.lower())
         if not word_clean:
@@ -185,6 +189,11 @@ def correct_ocr_errors(full_text, clean_text, pages_data):
             if word_lower in ocr_corrections:
                 corrected_word = word_data.copy()
                 corrected_word['text'] = ocr_corrections[word_lower]
+                corrected_word['original_text'] = word_text
+                corrected_words.append(corrected_word)
+            elif word_text.lower() in ocr_corrections:
+                corrected_word = word_data.copy()
+                corrected_word['text'] = ocr_corrections[word_text.lower()]
                 corrected_word['original_text'] = word_text
                 corrected_words.append(corrected_word)
             else:

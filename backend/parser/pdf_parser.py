@@ -4,6 +4,96 @@ import pytesseract
 from pytesseract import Output
 from PIL import Image
 import io
+import numpy as np
+import pandas as pd
+from scipy.ndimage import gaussian_filter1d
+
+def reorder_and_build_text(page_words, width):
+    """
+    Reorder words based on column projection profile and reconstruct text.
+    Handles both 1-column and 2-column layouts robustly.
+    """
+    if not page_words:
+        return [], ""
+
+    data = []
+    for i, w in enumerate(page_words):
+        bbox = w['bbox']
+        data.append({
+            'index': i,
+            'left': bbox[0],
+            'top': bbox[1],
+            'right': bbox[2],
+            'bottom': bbox[3],
+            'width': bbox[2] - bbox[0],
+            'height': bbox[3] - bbox[1]
+        })
+    df = pd.DataFrame(data)
+
+    # 1. Projection profile
+    w_int = int(width)
+    if w_int <= 0:
+        w_int = 1000
+    projection = np.zeros(w_int)
+
+    for _, r in df.iterrows():
+        x1 = max(0, int(r.left))
+        x2 = min(w_int, int(r.right))
+        if x1 < x2:
+            projection[x1:x2] += 1
+
+    projection = gaussian_filter1d(projection, sigma=10)
+
+    # 2. Detect column separator
+    center_region = projection[w_int//3 : 2*w_int//3]
+    
+    if len(center_region) > 0:
+        gap_min = np.min(center_region)
+        gap_idx = np.argmin(center_region)
+        separator = gap_idx + w_int//3
+
+        left_peak = np.max(projection[:separator]) if separator > 0 else 0
+        right_peak = np.max(projection[separator:]) if separator < w_int else 0
+
+        # Robustness: Check if it's actually 2 columns
+        # Gap should be significantly lower than the peaks
+        is_two_columns = (left_peak > 0 and right_peak > 0 and gap_min < 0.2 * min(left_peak, right_peak))
+    else:
+        is_two_columns = False
+        separator = w_int // 2
+
+    # Group by line (using top coordinate with a small tolerance)
+    df['line_group'] = (df['top'] / 10).astype(int)
+
+    if is_two_columns:
+        # 3. Split columns
+        left_df = df[df.left < separator].copy()
+        right_df = df[df.left >= separator].copy()
+
+        left_df = left_df.sort_values(by=['line_group', 'left'])
+        right_df = right_df.sort_values(by=['line_group', 'left'])
+
+        ordered_indices = left_df['index'].tolist() + right_df['index'].tolist()
+        
+        # Build text
+        page_text = ""
+        for _, group in left_df.groupby('line_group', sort=True):
+            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
+        page_text += "\n" # separate columns
+        for _, group in right_df.groupby('line_group', sort=True):
+            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
+            
+    else:
+        df = df.sort_values(by=['line_group', 'left'])
+        ordered_indices = df['index'].tolist()
+        
+        # Build text
+        page_text = ""
+        for _, group in df.groupby('line_group', sort=True):
+            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
+
+    ordered_words = [page_words[i] for i in ordered_indices]
+    return ordered_words, page_text
 
 def parse_pdf(file_path):
     """
@@ -60,10 +150,6 @@ def parse_pdf(file_path):
             img_data = pix.tobytes("png")
             img = Image.open(io.BytesIO(img_data))
             
-            # Get text content
-            page_text = pytesseract.image_to_string(img)
-            full_text += page_text + "\n"
-            
             # Get detailed data including bounding boxes
             data = pytesseract.image_to_data(img, output_type=Output.DICT)
             
@@ -86,8 +172,13 @@ def parse_pdf(file_path):
                         "line": data['line_num'][i]
                     })
             
+            # Reorder words and build text using projection profile
+            ordered_words, page_text = reorder_and_build_text(page_words, page.rect.width)
+            
+            full_text += page_text + "\n"
+            
             # Update the existing page data with OCR results
-            pages_data[page_num]["words"] = page_words
+            pages_data[page_num]["words"] = ordered_words
 
     # Simple sentence splitting logic
     clean_text = re.sub(r'\n+', ' ', full_text)
