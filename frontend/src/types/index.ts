@@ -21,6 +21,9 @@ export interface Book {
   pdf_url?: string;
   cover_image?: string;
   sentences?: Sentence[];
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  progress?: number;
+  error_message?: string;
 }
 
 export interface Sentence {

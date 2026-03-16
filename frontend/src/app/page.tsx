@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import BookList from '@/components/BookList';
+import Title from '@/components/Title';
 import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
-import { ArrowLeft, GraduationCap, Sparkles, BookOpen, Settings, Star, Heart } from 'lucide-react';
+import { ArrowLeft, GraduationCap, BookOpen, Settings, Star } from 'lucide-react';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/Dialog';
 
 export default function Home() {
@@ -85,22 +86,11 @@ export default function Home() {
       <div className={`flex-1 overflow-y-auto ${view === 'reader' ? '' : 'max-w-6xl mx-auto p-6 w-full'} relative z-10`}>
         {view === 'library' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-4xl flex items-center gap-3 mb-2">
-                  <Sparkles className="text-yellow-500 w-8 h-8 animate-pulse" />
-                  <span className="bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent">My Magic Library</span>
-                </h2>
-          <p className="text-green-600 text-lg font-medium flex items-center gap-2">
-            <Heart className="w-5 h-5 text-red-400 animate-pulse" />
-            Pick a book and start your adventure!
-          </p>
-              </div>
-              <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <Star className="w-5 h-5 text-yellow-500" />
-                <span className="text-sm font-bold text-amber-600">Keep your streak going!</span>
-              </div>
-            </div>
+            <Title 
+              title="My Magic Library" 
+              subtitle="Pick a book and start your adventure!"
+              badge={{ icon: <Star className="w-5 h-5 text-yellow-500" />, text: "Keep your streak going!" }}
+            />
             
             <BookList onSelectBook={handleSelectBook} />
             

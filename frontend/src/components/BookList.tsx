@@ -42,6 +42,18 @@ export default function BookList({ onSelectBook }: BookListProps) {
     fetchBooks();
   }, []);
 
+  // Poll for books that are still processing
+  useEffect(() => {
+    const processingBooks = books.filter(b => b.status === 'pending' || b.status === 'processing');
+    if (processingBooks.length === 0) return;
+
+    const interval = setInterval(() => {
+      fetchBooks();
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [books]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -87,71 +99,104 @@ export default function BookList({ onSelectBook }: BookListProps) {
             <input type="file" className="hidden" accept=".pdf,.epub" onChange={handleFileUpload} disabled={uploading} />
           </label>
 
-          {books.map((book, index) => (
-            <div
-              key={book.id}
-              onClick={() => onSelectBook(book.id)}
-              className="magic-card group h-[340px] cursor-pointer p-6 flex flex-col items-center justify-between relative animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              {/* Background Ambient Glow */}
-              <div 
-                className="absolute inset-0 z-0 opacity-0 group-hover:opacity-20 transition-opacity duration-700"
-                style={{
-                  background: book.cover_image 
-                    ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)}) center/cover`
-                    : 'linear-gradient(to bottom right, #22c55e, #0ea5e9)',
-                  filter: 'blur(20px)',
-                }}
-              />
+          {books.map((book, index) => {
+            const isProcessing = book.status === 'pending' || book.status === 'processing';
+            const isFailed = book.status === 'failed';
+            const isCompleted = book.status === 'completed';
 
-              {/* 3D Book Container with Levitation */}
-              <div 
-                className="animate-levitate z-10 mt-2"
-                style={{ animationDelay: `${index * 300}ms` }}
+            return (
+              <div
+                key={book.id}
+                onClick={() => isCompleted && onSelectBook(book.id)}
+                className={`magic-card group h-[340px] p-6 flex flex-col items-center justify-between relative animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-backwards ${isCompleted ? 'cursor-pointer' : 'cursor-default opacity-80'}`}
+                style={{ animationDelay: `${index * 100}ms` }}
               >
-                <div className="book-wrapper w-36 h-52 group-hover:scale-105 transition-transform duration-500">
-                  <div 
-                    className="book-cover-3d flex items-center justify-center overflow-hidden"
-                    style={{
-                      backgroundImage: book.cover_image ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)})` : undefined,
-                    }}
-                  >
-                    {!book.cover_image && (
-                      <div className="w-full h-full bg-gradient-to-br from-green-500 to-emerald-600 p-4 flex flex-col items-center justify-center text-center">
-                        <BookIcon className="w-8 h-8 text-white/50 mb-2" />
-                        <span className="text-white font-bold text-sm line-clamp-3 leading-tight">
-                          {book.title}
-                        </span>
-                      </div>
-                    )}
-                    {/* Sheen effect */}
-                    <div className="book-sheen" />
+                {/* Background Ambient Glow */}
+                <div 
+                  className="absolute inset-0 z-0 opacity-0 group-hover:opacity-20 transition-opacity duration-700"
+                  style={{
+                    background: book.cover_image 
+                      ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)}) center/cover`
+                      : 'linear-gradient(to bottom right, #22c55e, #0ea5e9)',
+                    filter: 'blur(20px)',
+                  }}
+                />
+
+                {/* 3D Book Container with Levitation */}
+                <div 
+                  className={`${isCompleted ? 'animate-levitate' : ''} z-10 mt-2`}
+                  style={{ animationDelay: `${index * 300}ms` }}
+                >
+                  <div className={`book-wrapper w-36 h-52 ${isCompleted ? 'group-hover:scale-105' : ''} transition-transform duration-500`}>
+                    <div 
+                      className="book-cover-3d flex items-center justify-center overflow-hidden bg-slate-100"
+                      style={{
+                        backgroundImage: book.cover_image ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)})` : undefined,
+                      }}
+                    >
+                      {!book.cover_image && (
+                        <div className={`w-full h-full p-4 flex flex-col items-center justify-center text-center ${isFailed ? 'bg-red-100' : 'bg-gradient-to-br from-green-500 to-emerald-600'}`}>
+                          {isProcessing ? (
+                            <div className="flex flex-col items-center">
+                              <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin mb-3" />
+                              <span className="text-white font-bold text-xs uppercase tracking-widest">Parsing...</span>
+                              <div className="w-24 h-1.5 bg-white/20 rounded-full mt-3 overflow-hidden">
+                                <div 
+                                  className="h-full bg-white transition-all duration-500" 
+                                  style={{ width: `${(book.progress || 0) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : isFailed ? (
+                            <>
+                              <div className="text-3xl mb-2">⚠️</div>
+                              <span className="text-red-600 font-bold text-xs">Failed to Parse</span>
+                            </>
+                          ) : (
+                            <>
+                              <BookIcon className="w-8 h-8 text-white/50 mb-2" />
+                              <span className="text-white font-bold text-sm line-clamp-3 leading-tight">
+                                {book.title}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {/* Sheen effect */}
+                      {isCompleted && <div className="book-sheen" />}
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              {/* Content */}
-              <div className="relative z-20 w-full text-center mt-4 space-y-2">
-                <h3 className="font-black text-slate-700 text-lg leading-tight line-clamp-1 group-hover:text-green-600 transition-colors" title={book.title}>
-                  {book.title}
-                </h3>
                 
-                <div className="flex items-center justify-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                  <span className="magic-tag text-[10px] tracking-wider">
-                    {book.type}
-                  </span>
+                {/* Content */}
+                <div className="relative z-20 w-full text-center mt-4 space-y-2">
+                  <h3 className={`font-black text-slate-700 text-lg leading-tight line-clamp-1 transition-colors ${isCompleted ? 'group-hover:text-green-600' : ''}`} title={book.title}>
+                    {book.title}
+                  </h3>
+                  
+                  <div className="flex items-center justify-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <span className={`magic-tag text-[10px] tracking-wider ${isFailed ? 'bg-red-100 text-red-600' : ''}`}>
+                      {isProcessing ? 'Processing' : isFailed ? 'Error' : book.type}
+                    </span>
+                    {isProcessing && (
+                      <span className="text-[10px] font-bold text-green-600 animate-pulse">
+                        {Math.round((book.progress || 0) * 100)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Hover Indicator */}
-              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
-                 <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur text-green-600 flex items-center justify-center shadow-sm">
-                   <BookIcon className="w-4 h-4" />
-                 </div>
+                {/* Hover Indicator */}
+                {isCompleted && (
+                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
+                    <div className="w-8 h-8 rounded-full bg-white/80 backdrop-blur text-green-600 flex items-center justify-center shadow-sm">
+                      <BookIcon className="w-4 h-4" />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* Large Empty State */

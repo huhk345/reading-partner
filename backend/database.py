@@ -18,10 +18,13 @@ class Book(Base):
     title = Column(String, index=True)
     filename = Column(String, nullable=True)
     type = Column(String)  # 'pdf' or 'epub'
-    content = Column(Text)
+    content = Column(Text, nullable=True)
     clean_text = Column(Text, nullable=True)
     pages_data = Column(Text, nullable=True) # JSON string
     cover_image = Column(String, nullable=True) # Path to cover image
+    status = Column(String, default="pending") # 'pending', 'processing', 'completed', 'failed'
+    error_message = Column(Text, nullable=True)
+    progress = Column(Float, default=0.0)
     sentences = relationship("Sentence", back_populates="book")
 
 class Sentence(Base):
