@@ -180,7 +180,7 @@ def get_book_url(book):
 
 @app.get("/api/books")
 def list_books(db: Session = Depends(get_db)):
-    books = db.query(Book).all()
+    books = db.query(Book).order_by(Book.id.desc()).all()
     return [{
         "id": book.id,
         "title": book.title,
@@ -361,7 +361,7 @@ def get_review_list(db: Session = Depends(get_db)):
 @app.get("/api/vocab/all")
 def get_all_vocab(db: Session = Depends(get_db)):
     # Get all words in the vocabulary
-    reviews = db.query(Vocab).all()
+    reviews = db.query(Vocab).order_by(Vocab.added_time.desc()).all()
     
     result = []
     for r in reviews:
