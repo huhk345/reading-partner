@@ -5,6 +5,7 @@ date_created: 2026-03-15
 last_updated: 2026-03-15
 owner: Gemini CLI
 tags: [design, frontend, ux, interactive, language-learning]
+status: done
 ---
 
 # Introduction

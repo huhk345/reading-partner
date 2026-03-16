@@ -6,6 +6,7 @@ last_updated: 2026-03-15
 status: completed
 owner: Gemini CLI
 tags: [features, ui, ux, dictionary]
+status: done
 ---
 
 # Introduction

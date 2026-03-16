@@ -206,16 +206,14 @@ export default function Review({ onBack }: ReviewProps) {
   }
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col min-h-screen px-6">
-      <div className="space-y-8">
-        {/* Dynamic Header */}
+    <div className="max-w-6xl mx-auto w-full">
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <Title 
           title="Word Wall" 
           subtitle="Your magical word collection!"
           badge={{ icon: <Sparkles className="w-5 h-5 text-yellow-500" />, text: `${reviews.length} words collected!` }}
         />
 
-        {/* Grid Wall with Staggered Entrance */}
         <motion.div 
           layout
           className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 pb-20 align-start"
