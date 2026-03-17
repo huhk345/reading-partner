@@ -44,14 +44,36 @@ def lookup_word(word: str):
             data = response.json()
             if isinstance(data, list) and len(data) > 0:
                 entry = data[0]
-                phonetic = entry.get("phonetic", "")
                 
                 phonetics = entry.get("phonetics", [])
+                audio_url = ""
+                # Start with top-level phonetic as default
+                phonetic = entry.get("phonetic", "")
+                
+                # Priority: US (2) > UK (1) > Others (0)
+                best_audio_priority = -1
+                
                 for p in phonetics:
-                    if not phonetic and p.get("text"):
-                        phonetic = p.get("text")
-                    if not audio_url and p.get("audio"):
-                        audio_url = p.get("audio")
+                    p_audio = p.get("audio", "")
+                    p_text = p.get("text", "")
+                    
+                    if p_audio:
+                        priority = 0
+                        # Check for US/UK in the audio URL
+                        if "-us" in p_audio.lower() or "/us/" in p_audio.lower():
+                            priority = 2
+                        elif "-uk" in p_audio.lower() or "/uk/" in p_audio.lower():
+                            priority = 1
+                        
+                        if priority > best_audio_priority:
+                            best_audio_priority = priority
+                            audio_url = p_audio
+                            # Use the phonetic associated with this audio if it exists
+                            if p_text:
+                                phonetic = p_text
+                    elif best_audio_priority < 0 and p_text and not phonetic:
+                        # Fallback to first available phonetic text if no audio found yet and no top-level phonetic
+                        phonetic = p_text
                 
                 # Extract first definition
                 meanings = entry.get("meanings", [])

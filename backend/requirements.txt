@@ -10,3 +10,4 @@ Pillow
 ebooklib
 beautifulsoup4
 TTS
+spacy

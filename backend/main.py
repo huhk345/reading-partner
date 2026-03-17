@@ -26,6 +26,7 @@ from parser.epub_parser import parse_epub
 from parser.llm_parser import get_book_info_and_clean_text, split_sentences_llm
 from parser.ocr_corrector import correct_ocr_errors
 from dictionary.lookup import lookup_word
+from dictionary.lemmatize import get_lemma
 from srs.sm2 import update_sm2
 from tts.generate import tts_engine
 
@@ -251,30 +252,49 @@ def get_book_status(book_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/dict")
-def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Optional[int] = None, db: Session = Depends(get_db)):
-    # 1. Check if word is already in our DB
-    db_word = db.query(Word).filter(Word.word == word.lower()).first()
+def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Optional[int] = None, skip_lemma: bool = False, force_refresh: bool = False, db: Session = Depends(get_db)):
+    original_word = word.lower().strip()
     
-    if not db_word:
+    # Get lemma if not skipped (REQ-001, REQ-002)
+    lemma = None
+    if not skip_lemma:
+        lemma = get_lemma(original_word)
+        # Only return lemma if different from original word (CON-002)
+        if lemma == original_word:
+            lemma = None
+    
+    # 1. Check if word is already in our DB
+    db_word = db.query(Word).filter(Word.word == original_word).first()
+    
+    if not db_word or force_refresh:
         # 2. Lookup word from external API
-        result = lookup_word(word)
+        result = lookup_word(original_word)
         if result:
-            db_word = Word(
-                word=word.lower(), 
-                phonetic=result.get("phonetic"), 
-                meaning=result.get("meaning"),
-                audio_url=result.get("audio_url")
-            )
-            try:
+            if db_word:
+                # Update existing word
+                db_word.phonetic = result.get("phonetic")
+                db_word.meaning = result.get("meaning")
+                db_word.audio_url = result.get("audio_url")
+            else:
+                # Create new word
+                db_word = Word(
+                    word=original_word, 
+                    phonetic=result.get("phonetic"), 
+                    meaning=result.get("meaning"),
+                    audio_url=result.get("audio_url")
+                )
                 db.add(db_word)
+            
+            try:
                 db.commit()
                 db.refresh(db_word)
             except IntegrityError:
                 db.rollback()
-                # If another request inserted it while we were looking it up
-                db_word = db.query(Word).filter(Word.word == word.lower()).first()
+                # If another request inserted/updated it while we were looking it up
+                db_word = db.query(Word).filter(Word.word == original_word).first()
         else:
-            return {"word": word, "error": "Not found"}
+            if not db_word:
+                return {"word": word, "error": "Not found"}
     
     # 3. Track occurrence if book/sentence info provided
     if book_id and sentence_id:
@@ -304,6 +324,7 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
     return {
         "id": db_word.id,
         "word": db_word.word,
+        "lemma": lemma,
         "phonetic": db_word.phonetic,
         "meaning": db_word.meaning,
         "audio_url": db_word.audio_url,

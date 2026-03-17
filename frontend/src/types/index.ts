@@ -36,6 +36,7 @@ export interface Sentence {
 export interface WordDefinition {
   id?: number;
   word: string;
+  lemma?: string;
   phonetic?: string;
   meaning?: string;
   audio_url?: string;

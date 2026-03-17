@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Book as BookIcon, Plus } from 'lucide-react';
+import { Book as BookIcon, Plus, RefreshCw } from 'lucide-react';
 import { Book } from '../types';
 import { 
   Dialog, 
@@ -77,6 +77,21 @@ export default function BookList({ onSelectBook }: BookListProps) {
     }
   };
 
+  const handleReparse = async (bookId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
+      fetchBooks();
+    } catch (error) {
+      console.error('Error reparsing book:', error);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Reparse Failed ❌',
+        description: 'Something went wrong while trying to reparse the book.',
+      });
+    }
+  };
+
   return (
     <div className="space-y-8 p-4">
       {books.length > 0 ? (
@@ -129,13 +144,27 @@ export default function BookList({ onSelectBook }: BookListProps) {
                 >
                   <div className={`book-wrapper w-36 h-52 ${isCompleted ? 'group-hover:scale-105' : ''} transition-transform duration-500`}>
                     <div 
-                      className="book-cover-3d flex items-center justify-center overflow-hidden bg-slate-100"
+                      className="book-cover-3d flex items-center justify-center overflow-hidden bg-slate-100 relative"
                       style={{
                         backgroundImage: book.cover_image ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)})` : undefined,
                       }}
                     >
-                      {!book.cover_image && (
-                        <div className={`w-full h-full p-4 flex flex-col items-center justify-center text-center ${isFailed ? 'bg-red-100' : 'bg-gradient-to-br from-green-500 to-emerald-600'}`}>
+                      {isFailed && (
+                        <div className="absolute inset-0 z-30 bg-red-900/40 backdrop-blur-[2px] flex flex-col items-center justify-center p-4">
+                          <div className="text-3xl mb-1 drop-shadow-lg">⚠️</div>
+                          <span className="text-white font-black text-[10px] uppercase tracking-wider mb-3 drop-shadow-md text-center">Failed to Parse</span>
+                          <button 
+                            onClick={(e) => handleReparse(book.id, e)}
+                            className="clay-button group/btn bg-white text-red-600 hover:bg-red-50 px-4 py-2 text-[11px] flex items-center gap-1.5 shadow-xl active:scale-95 transition-all"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 transition-transform duration-700 group-hover/btn:rotate-180" />
+                            Reparse
+                          </button>
+                        </div>
+                      )}
+
+                      {!book.cover_image && !isFailed && (
+                        <div className={`w-full h-full p-4 flex flex-col items-center justify-center text-center bg-gradient-to-br from-green-500 to-emerald-600`}>
                           {isProcessing ? (
                             <div className="flex flex-col items-center">
                               <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin mb-3" />
@@ -147,11 +176,6 @@ export default function BookList({ onSelectBook }: BookListProps) {
                                 />
                               </div>
                             </div>
-                          ) : isFailed ? (
-                            <>
-                              <div className="text-3xl mb-2">⚠️</div>
-                              <span className="text-red-600 font-bold text-xs">Failed to Parse</span>
-                            </>
                           ) : (
                             <>
                               <BookIcon className="w-8 h-8 text-white/50 mb-2" />

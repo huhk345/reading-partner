@@ -15,7 +15,7 @@ def reorder_and_build_text(page_words, width):
     """
     if not page_words:
         return [], ""
-
+    
     data = []
     for i, w in enumerate(page_words):
         bbox = w['bbox']
@@ -62,35 +62,21 @@ def reorder_and_build_text(page_words, width):
         is_two_columns = False
         separator = w_int // 2
 
-    # Group by line (using top coordinate with a small tolerance)
-    df['line_group'] = (df['top'] / 10).astype(int)
-
     if is_two_columns:
         # 3. Split columns
         left_df = df[df.left < separator].copy()
         right_df = df[df.left >= separator].copy()
-
-        left_df = left_df.sort_values(by=['line_group', 'left'])
-        right_df = right_df.sort_values(by=['line_group', 'left'])
-
+        
         ordered_indices = left_df['index'].tolist() + right_df['index'].tolist()
         
         # Build text
-        page_text = ""
-        for _, group in left_df.groupby('line_group', sort=True):
-            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
-        page_text += "\n" # separate columns
-        for _, group in right_df.groupby('line_group', sort=True):
-            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
+        page_text = " ".join(page_words[i]['text'] for i in left_df['index'])
+        page_text += "\n\n" # separate columns
+        page_text += " ".join(page_words[i]['text'] for i in right_df['index'])
             
     else:
-        df = df.sort_values(by=['line_group', 'left'])
         ordered_indices = df['index'].tolist()
-        
-        # Build text
-        page_text = ""
-        for _, group in df.groupby('line_group', sort=True):
-            page_text += " ".join(page_words[i]['text'] for i in group['index']) + "\n"
+        page_text = " ".join(page_words[i]['text'] for i in df['index'])
 
     ordered_words = [page_words[i] for i in ordered_indices]
     return ordered_words, page_text

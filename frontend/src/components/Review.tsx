@@ -59,7 +59,7 @@ const ClayWordCard = ({
       onClick={() => setIsFlipped(!isFlipped)}
       whileHover={{ scale: 1.02, y: -4 }}
       whileTap={{ scale: 0.98 }}
-      animate={{ height: isFlipped ? 280 + getMeaningHeight(review.meaning) : 200 }}
+      animate={{ height: isFlipped ? 280 + getMeaningHeight(review.meaning || '') : 200 }}
       transition={{ 
         type: "spring", 
         stiffness: 150, 

@@ -468,19 +468,38 @@ def parse_epub(path):
 import requests
 
 def lookup(word):
-
-    url=f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
-
-    r=requests.get(url)
-
-    if r.status_code!=200:
+    url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+    r = requests.get(url)
+    if r.status_code != 200:
         return None
 
-    data=r.json()[0]
+    data = r.json()[0]
+    phonetics = data.get("phonetics", [])
+    
+    # Priority: US audio > UK audio > any audio
+    best_audio = ""
+    phonetic = data.get("phonetic", "")
+    best_priority = -1
+    
+    for p in phonetics:
+        audio = p.get("audio", "")
+        text = p.get("text", "")
+        if audio:
+            priority = 0
+            if "-us" in audio.lower(): priority = 2
+            elif "-uk" in audio.lower(): priority = 1
+            
+            if priority > best_priority:
+                best_priority = priority
+                best_audio = audio
+                if text: phonetic = text
+        elif best_priority < 0 and text and not phonetic:
+            phonetic = text
 
     return {
-        "phonetic":data.get("phonetic"),
-        "meaning":data["meanings"][0]["definitions"][0]["definition"]
+        "phonetic": phonetic,
+        "audio_url": best_audio,
+        "meaning": data["meanings"][0]["definitions"][0]["definition"]
     }
 ```
 

@@ -116,9 +116,14 @@ interface ReaderProps {
 export default function Reader({ bookId, onBack }: ReaderProps) {
   const [book, setBook] = useState<Book | null>(null);
   const [selectedWord, setSelectedWord] = useState<WordDefinition | null>(null);
+  const [originalWord, setOriginalWord] = useState<string>('');
+  const [lemma, setLemma] = useState<string | undefined>(undefined);
+  const [activeWord, setActiveWord] = useState<string>('');
   const [inputWord, setInputWord] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoadingWord, setIsLoadingWord] = useState(false);
+  const [hasPlayedLemma, setHasPlayedLemma] = useState(false);
+  const hasAutoPlayedRef = useRef(false);
   const [lastSentenceId, setLastSentenceId] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [numPages, setNumPages] = useState<number>(0);
@@ -144,6 +149,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const lastFetchedBookId = useRef<number | null>(null);
+
   const fetchBook = async () => {
     try {
       const response = await axios.get(`http://localhost:8000/api/books/${bookId}`);
@@ -156,6 +163,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   };
 
   useEffect(() => {
+    if (lastFetchedBookId.current === bookId) return;
+    lastFetchedBookId.current = bookId;
     fetchBook();
   }, [bookId]);
 
@@ -169,12 +178,12 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         setReparsing(true);
         try {
           await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
-          await fetchBook();
           setDialogConfig({
             isOpen: true,
             title: "Success! 🚀",
             description: "Book re-parsed successfully!",
-            isAlert: true
+            isAlert: true,
+            onConfirm: onBack
           });
         } catch (error) {
           console.error('Error reparsing book:', error);
@@ -257,7 +266,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  const lookupWord = async (word: string, sentenceId?: number) => {
+  const lookupWord = async (word: string, sentenceId?: number, skipLemma: boolean = false, forceRefresh: boolean = false) => {
     const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
@@ -267,10 +276,17 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         params: { 
           word: cleanWord,
           book_id: bookId,
-          sentence_id: sentenceId
+          sentence_id: sentenceId,
+          skip_lemma: skipLemma,
+          force_refresh: forceRefresh
         }
       });
       setSelectedWord(response.data);
+      // Auto-play audio on first lookup or forced refresh
+      if ((!skipLemma || forceRefresh) && response.data.audio_url) {
+        hasAutoPlayedRef.current = true;
+        speak(response.data.word, response.data.audio_url);
+      }
     } catch (error) {
       console.error('Error fetching word:', error);
       setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: 'Failed to load definition' });
@@ -279,19 +295,19 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  // Debounced lookup when inputWord changes
+  // Debounced lookup when inputWord changes (only for manual typing, not for tag clicks)
   useEffect(() => {
     if (!isDialogOpen || !inputWord) return;
     
-    // Don't re-lookup if it's the same word as selectedWord
-    if (selectedWord && inputWord.toLowerCase() === selectedWord.word.toLowerCase()) return;
+    // Skip if inputWord matches activeWord (tag click already triggered lookup)
+    if (selectedWord && inputWord.toLowerCase() === activeWord.toLowerCase()) return;
 
     const delayDebounceFn = setTimeout(() => {
-      lookupWord(inputWord, lastSentenceId);
+      lookupWord(inputWord, lastSentenceId, true);
     }, 600);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [inputWord, isDialogOpen, lastSentenceId]);
+  }, [inputWord, isDialogOpen, lastSentenceId, activeWord]);
 
   const handleWordClick = async (word: string, sentenceId?: number) => {
     // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
@@ -302,9 +318,24 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     setIsDialogOpen(true);
     setInputWord(cleanWord);
     setLastSentenceId(sentenceId);
+    setOriginalWord(cleanWord);
+    setActiveWord(cleanWord);
+    setLemma(undefined);
+    setHasPlayedLemma(false);
+    hasAutoPlayedRef.current = false;
+    console.log('handleWordClick:', cleanWord, sentenceId);
     setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
     
-    await lookupWord(cleanWord, sentenceId);
+    await lookupWord(cleanWord, sentenceId, false);
+  };
+
+  const handleLemmaClick = async (lemmaWord: string) => {
+    if (!hasPlayedLemma) {
+      setHasPlayedLemma(true);
+    }
+    setActiveWord(lemmaWord);
+    setInputWord(lemmaWord);
+    await lookupWord(lemmaWord, lastSentenceId, true);
   };
 
   const handlePdfClick = (e: React.MouseEvent) => {
@@ -411,12 +442,12 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  // Auto-play audio when word is loaded with audio_url (REQ-004)
+  // Update lemma when selectedWord changes (only for initial lookup, not for lemma clicks)
   useEffect(() => {
-    if (selectedWord && selectedWord.audio_url && !isLoadingWord) {
-      speak(selectedWord.word, selectedWord.audio_url);
+    if (selectedWord && selectedWord.lemma && !isLoadingWord && activeWord === originalWord) {
+      setLemma(selectedWord.lemma);
     }
-  }, [selectedWord, isLoadingWord]);
+  }, [selectedWord, isLoadingWord, originalWord, activeWord]);
 
   if (loading || !book) {
     return (
@@ -638,15 +669,63 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               exit={{ opacity: 0, y: 100, scale: 0.9 }}
               className="fixed inset-x-4 bottom-8 z-[101] clay-card bg-white p-8 max-w-2xl mx-auto shadow-2xl border-t-8 border-indigo-500"
             >
-              <button
-                onClick={() => setIsDialogOpen(false)}
-                className="absolute top-4 right-4 w-10 h-10 clay-card flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="absolute top-4 right-4 flex gap-3">
+                <button
+                  onClick={() => lookupWord(inputWord, lastSentenceId, true, true)}
+                  className="w-10 h-10 clay-card flex items-center justify-center text-slate-400 hover:text-indigo-500 transition-colors"
+                  title="Refresh definition"
+                  disabled={isLoadingWord}
+                >
+                  <RefreshCw className={`w-5 h-5 ${isLoadingWord ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={() => setIsDialogOpen(false)}
+                  className="w-10 h-10 clay-card flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
 
               <div className="flex justify-between items-start mb-6">
                 <div className="w-full mr-8">
+                  {/* Lemma Tags - Show when word !== lemma */}
+                  {lemma && !isLoadingWord && (
+                    <motion.div 
+                      key={activeWord}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.25, ease: 'easeOut' }}
+                      className="flex items-center gap-2 mb-3 overflow-hidden"
+                    >
+                      <button
+                        onClick={async () => {
+                          if (activeWord !== originalWord) {
+                            setActiveWord(originalWord);
+                            setInputWord(originalWord);
+                            await lookupWord(originalWord, lastSentenceId, false);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          activeWord === originalWord
+                            ? 'bg-indigo-500 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {originalWord}
+                      </button>
+                      <button
+                        onClick={() => handleLemmaClick(lemma)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          activeWord === lemma
+                            ? 'bg-indigo-500 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {lemma}
+                      </button>
+                    </motion.div>
+                  )}
                   <input
                     type="text"
                     value={inputWord}
@@ -660,6 +739,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       <button
                         onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
                         className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
+                        title="Listen"
                       >
                         <Volume2 className="w-5 h-5" />
                       </button>
@@ -671,18 +751,36 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               {isLoadingWord ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                  <p className="text-slate-500 font-medium">Looking up "{inputWord}"...</p>
+                  <p className="text-slate-500 font-medium">Looking up &quot;{inputWord}&quot;...</p>
                 </div>
               ) : (
-                <>
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.2 }}
+                  className="min-h-[200px]"
+                >
+                  <motion.div
+                    key={selectedWord?.word}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className="overflow-hidden"
+                  >
                   <div className="mb-8">
                     <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                       <span className="w-2 h-2 bg-indigo-400 rounded-full" />
                       What it means
                     </h4>
-                    <p className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line">
+                    <motion.p 
+                      key={selectedWord?.word}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line"
+                    >
                       {selectedWord?.meaning}
-                    </p>
+                    </motion.p>
                   </div>
 
                   {selectedWord?.occurrences && selectedWord.occurrences.length > 0 && (
@@ -712,7 +810,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                     <Plus className="w-6 h-6" />
                     Add to My Word Bank
                   </button>
-                </>
+                </motion.div>
+                </motion.div>
               )}
             </motion.div>
           </>
