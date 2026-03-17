@@ -689,7 +689,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               <div className="flex justify-between items-start mb-6">
                 <div className="w-full mr-8">
                   {/* Lemma Tags - Show when word !== lemma */}
-                  {lemma && !isLoadingWord && (
+                  {lemma && (
                     <motion.div 
                       key={activeWord}
                       initial={{ opacity: 0, height: 0 }}
@@ -726,40 +726,48 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       </button>
                     </motion.div>
                   )}
-                  <input
-                    type="text"
-                    value={inputWord}
-                    onChange={(e) => setInputWord(e.target.value)}
-                    className="text-4xl font-bold text-indigo-600 mb-1 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-lg w-full transition-all"
-                    placeholder="Type a word..."
-                  />
-                  {!isLoadingWord && (
+                  <div className={`transition-all duration-300 ${(isLoadingWord && selectedWord?.meaning) ? 'blur-[4px] pointer-events-none' : ''}`}>
+                    <input
+                      type="text"
+                      value={inputWord}
+                      onChange={(e) => setInputWord(e.target.value)}
+                      className="text-4xl font-bold text-indigo-600 mb-1 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-lg w-full transition-all"
+                      placeholder="Type a word..."
+                    />
                     <div className="flex items-center gap-3">
                       <span className="text-blue-500 font-bold text-lg">{selectedWord?.phonetic}</span>
-                      <button
-                        onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
-                        className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
-                        title="Listen"
-                      >
-                        <Volume2 className="w-5 h-5" />
-                      </button>
+                      {selectedWord?.phonetic && (
+                        <button
+                          onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
+                          className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
+                          title="Listen"
+                        >
+                          <Volume2 className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
-              {isLoadingWord ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                  <p className="text-slate-500 font-medium">Looking up &quot;{inputWord}&quot;...</p>
-                </div>
-              ) : (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                  className="min-h-[200px]"
-                >
+              <div className="relative min-h-[200px]">
+                {isLoadingWord && !selectedWord?.meaning && (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p className="text-slate-500 font-medium">Looking up &quot;{inputWord}&quot;...</p>
+                  </div>
+                )}
+
+                {(selectedWord?.meaning || !isLoadingWord) && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ 
+                      opacity: 1,
+                      filter: (isLoadingWord && selectedWord?.meaning) ? 'blur(4px)' : 'blur(0px)'
+                    }}
+                    transition={{ duration: 0.2 }}
+                    className={`min-h-[200px] transition-all duration-300 ${(isLoadingWord && selectedWord?.meaning) ? 'pointer-events-none' : ''}`}
+                  >
                   <motion.div
                     key={selectedWord?.word}
                     initial={{ opacity: 0, height: 0 }}
@@ -813,6 +821,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                 </motion.div>
                 </motion.div>
               )}
+              </div>
             </motion.div>
           </>
         )}
