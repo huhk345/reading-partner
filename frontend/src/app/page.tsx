@@ -6,13 +6,12 @@ import Title from '@/components/Title';
 import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
-import { ArrowLeft, GraduationCap, BookOpen, Settings, Star } from 'lucide-react';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/Dialog';
+import Calendar from '@/components/Calendar';
+import { ArrowLeft, GraduationCap, BookOpen, Star, Calendar as CalendarIcon } from 'lucide-react';
 
 export default function Home() {
-  const [view, setView] = useState<'library' | 'reader' | 'review'>('library');
+  const [view, setView] = useState<'library' | 'reader' | 'review' | 'calendar'>('library');
   const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handleSelectBook = (id: number) => {
     setSelectedBookId(id);
@@ -61,13 +60,6 @@ export default function Home() {
           
           <nav className="flex items-center gap-2">
             <button 
-              onClick={() => setIsDialogOpen(true)}
-              className="p-2.5 text-green-600 hover:bg-green-100 rounded-xl transition-colors"
-              title="Settings"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            <button 
               onClick={() => setView('library')}
               className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'library' ? 'bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105' : 'text-green-700 hover:bg-green-100'}`}
             >
@@ -75,9 +67,15 @@ export default function Home() {
             </button>
             <button 
               onClick={() => setView('review')}
-              className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'review' ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-200 hover:shadow-xl hover:shadow-yellow-300 hover:scale-105' : 'text-amber-600 hover:bg-yellow-100'}`}
+              className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'review' ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-200 hover:shadow-xl hover:shadow-yellow-300 hover:scale-105' : 'text-green-700 hover:bg-green-100'}`}
             >
               Word Wall
+            </button>
+            <button 
+              onClick={() => setView('calendar')}
+              className={`px-5 py-2.5 rounded-2xl font-bold transition-all text-sm ${view === 'calendar' ? 'bg-blue-500 text-white shadow-lg shadow-blue-200 hover:shadow-xl hover:shadow-blue-300 hover:scale-105' : 'text-green-700 hover:bg-green-100'}`}
+            >
+              Calendar
             </button>
           </nav>
         </div>
@@ -97,10 +95,12 @@ export default function Home() {
             <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-20">
               <button
                 onClick={() => setView('review')}
-                className="clay-button clay-accent py-4 px-8 text-xl group shadow-2xl hover:scale-110 transition-transform"
+                className="px-5 py-2.5 rounded-2xl font-bold transition-all text-base bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 group"
               >
-                <GraduationCap className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
-                Visit Word Wall
+                <div className="flex items-center">
+                  <GraduationCap className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
+                  <span>Visit Word Wall</span>
+                </div>
               </button>
             </div>
           </div>
@@ -120,45 +120,13 @@ export default function Home() {
             <Review onBack={() => setView('library')} />
           </div>
         )}
-      </div>
 
-      <Dialog isOpen={isDialogOpen} onClose={() => setIsDialogOpen(false)}>
-        <DialogHeader>
-          <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-green-200">
-            <Settings className="w-7 h-7" />
+        {view === 'calendar' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <Calendar />
           </div>
-          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
-            Magic Settings
-          </DialogTitle>
-          <DialogDescription className="text-green-600">
-            Customize your reading adventure.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogContent className="space-y-4">
-          <div className="clay-card p-4 bg-green-50 border-2 border-green-100">
-            <h4 className="font-bold text-green-700 mb-2">Display Mode</h4>
-            <div className="flex gap-2">
-              <button className="flex-1 py-3 px-4 bg-white border-2 border-green-500 text-green-700 rounded-xl font-bold shadow-sm hover:bg-green-50 hover:scale-105 transition-all">
-                Default
-              </button>
-              <button className="flex-1 py-3 px-4 bg-white border-2 border-green-200 text-green-500 rounded-xl font-bold hover:border-green-300 transition-colors">
-                Cozy
-              </button>
-            </div>
-          </div>
-          <p className="text-green-400 text-sm text-center font-medium italic">
-            Every great story starts with a single click.
-          </p>
-        </DialogContent>
-        <DialogFooter>
-          <button 
-            onClick={() => setIsDialogOpen(false)}
-            className="clay-button clay-primary w-full sm:w-auto hover:scale-105 transition-transform"
-          >
-            Got it!
-          </button>
-        </DialogFooter>
-      </Dialog>
+        )}
+      </div>
     </main>
   );
 }

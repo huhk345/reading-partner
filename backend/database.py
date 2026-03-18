@@ -69,6 +69,14 @@ class Vocab(Base):
     repetition = Column(Integer, default=0)
     word = relationship("Word", back_populates="vocab")
 
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(String, index=True)  # YYYY-MM-DD format
+    event_type = Column(String)  # "book_open" | "word_lookup" | "srs_review"
+    book_id = Column(Integer, ForeignKey("books.id"), nullable=True)
+    word_count = Column(Integer, default=1)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 

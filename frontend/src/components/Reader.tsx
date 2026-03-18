@@ -133,6 +133,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [renderedPages, setRenderedPages] = useState<Record<number, { width: number, height: number }>>({});
   const [reparsing, setReparsing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isReadingWord, setIsReadingWord] = useState(false);
   const [hoveredWordPos, setHoveredWordPos] = useState<{x: number, y: number, sentenceId?: number, sentenceText?: string} | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -179,13 +180,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         setReparsing(true);
         try {
           await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
-          setDialogConfig({
-            isOpen: true,
-            title: "Success! 🚀",
-            description: "Book re-parsed successfully!",
-            isAlert: true,
-            onConfirm: onBack
-          });
+          onBack();
         } catch (error) {
           console.error('Error reparsing book:', error);
           setDialogConfig({
@@ -376,13 +371,14 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  const speak = async (text: string, audioUrl?: string) => {
+  const speak = async (text: string, audioUrl?: string, onComplete?: () => void) => {
     if (audioUrl) {
       const audio = new Audio(audioUrl);
       audio.play().catch(e => {
         console.error("Error playing audio file, falling back to synthesis", e);
-        fallbackSpeak(text);
+        fallbackSpeak(text, onComplete);
       });
+      audio.onended = () => onComplete?.();
       return;
     }
     try {
@@ -393,14 +389,15 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         const audio = new Audio(response.data.audio_url);
         audio.play().catch(e => {
           console.error("Error playing TTS audio, falling back to synthesis", e);
-          fallbackSpeak(text);
+          fallbackSpeak(text, onComplete);
         });
+        audio.onended = () => onComplete?.();
         return;
       }
     } catch (error) {
       console.error("Error fetching TTS audio, falling back to synthesis", error);
     }
-    fallbackSpeak(text);
+    fallbackSpeak(text, onComplete);
   };
 
   const findSentenceContainingWord = (word: string): Sentence | null => {
@@ -421,11 +418,15 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     setIsSpeaking(false);
   };
 
-  const fallbackSpeak = (text: string) => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel(); // Stop current speech
+  const fallbackSpeak = (text: string, onComplete?: () => void) => {
+    if (!window.speechSynthesis) {
+      onComplete?.();
+      return;
+    }
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.8;
+    utterance.onend = () => onComplete?.();
     window.speechSynthesis.speak(utterance);
   };
 
@@ -750,11 +751,19 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       <span className="text-blue-500 font-bold text-lg">{selectedWord?.phonetic}</span>
                       {selectedWord?.phonetic && (
                         <button
-                          onClick={() => speak(selectedWord?.word || '', selectedWord?.audio_url)}
-                          className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform"
+                          onClick={() => {
+                            setIsReadingWord(true);
+                            speak(selectedWord?.word || '', selectedWord?.audio_url, () => setIsReadingWord(false));
+                          }}
+                          disabled={isReadingWord}
+                          className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Listen"
                         >
-                          <Volume2 className="w-5 h-5" />
+                          {isReadingWord ? (
+                            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Volume2 className="w-5 h-5" />
+                          )}
                         </button>
                       )}
                     </div>
@@ -819,7 +828,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       <button
                         onClick={addToVocab}
                         disabled={!selectedWord?.id}
-                        className="clay-button clay-primary w-full py-4 text-xl flex items-center justify-center gap-3 shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-5 py-2.5 rounded-2xl font-bold transition-all text-sm bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 w-full py-4 text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Plus className="w-6 h-6" />
                         Add to My Word Bank

@@ -5,6 +5,7 @@ date_created: 2026-03-14
 last_updated: 2026-03-14
 owner: Gemini CLI
 tags: [features, ui, analytics, tracking]
+status: done
 ---
 
 # Introduction

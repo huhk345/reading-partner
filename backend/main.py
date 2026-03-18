@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-from database import SessionLocal, init_db, Book, Sentence, Word, WordOccurrence, Vocab, get_db
+from database import SessionLocal, init_db, Book, Sentence, Word, WordOccurrence, Vocab, ActivityLog, get_db
 from parser.pdf_parser import parse_pdf
 from parser.epub_parser import parse_epub
 from parser.llm_parser import get_book_info_and_clean_text, split_sentences_llm
@@ -50,6 +50,12 @@ TTS_DIR = "uploads/tts"
 if not os.path.exists(TTS_DIR):
     os.makedirs(TTS_DIR)
 app.mount("/tts", StaticFiles(directory=TTS_DIR), name="tts")
+
+def log_activity(db: Session, event_type: str, book_id: int = None, word_count: int = 1):
+    today = datetime.date.today().isoformat()
+    log = ActivityLog(date=today, event_type=event_type, book_id=book_id, word_count=word_count)
+    db.add(log)
+    db.commit()
 
 init_db()
 
@@ -198,6 +204,8 @@ def get_book(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
+    log_activity(db, "book_open", book_id=book_id)
+    
     if book.status != "completed":
         return {
             "id": book.id,
@@ -309,8 +317,8 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
                 db.commit()
             except IntegrityError:
                 db.rollback()
-                # If already tracked, just continue
                 pass
+        log_activity(db, "word_lookup", book_id=book_id)
             
     # 4. Fetch previous occurrences for context
     occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == db_word.id).all()
@@ -426,6 +434,8 @@ def submit_review(vocab_id: int, quality: int, db: Session = Depends(get_db)):
     vocab.repetition = repetition
     vocab.ef = ef
     
+    log_activity(db, "srs_review")
+    
     db.commit()
     return {"next_review": next_review}
 
@@ -437,3 +447,76 @@ def generate_tts(text: str):
         return {"audio_url": f"http://localhost:8000/tts/{audio_filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+@app.get("/api/activity")
+def get_activity(year: Optional[int] = None, month: Optional[int] = None, db: Session = Depends(get_db)):
+    query = db.query(ActivityLog)
+    
+    if year and month:
+        start_date = f"{year}-{month:02d}-01"
+        if month == 12:
+            end_date = f"{year + 1}-01-01"
+        else:
+            end_date = f"{year}-{month + 1:02d}-01"
+        query = query.filter(ActivityLog.date >= start_date, ActivityLog.date < end_date)
+    
+    logs = query.all()
+    
+    activity_by_date = {}
+    for log in logs:
+        if log.date not in activity_by_date:
+            activity_by_date[log.date] = {"book_count": 0, "word_count": 0, "review_count": 0}
+        
+        if log.event_type == "book_open":
+            activity_by_date[log.date]["book_count"] += 1
+        elif log.event_type == "word_lookup":
+            activity_by_date[log.date]["word_count"] += log.word_count
+        elif log.event_type == "srs_review":
+            activity_by_date[log.date]["review_count"] += 1
+    
+    result = [
+        {
+            "date": date,
+            "book_count": data["book_count"],
+            "word_count": data["word_count"],
+            "review_count": data["review_count"]
+        }
+        for date, data in sorted(activity_by_date.items())
+    ]
+    
+    return result
+
+@app.get("/api/activity/streak")
+def get_streak(db: Session = Depends(get_db)):
+    today = datetime.date.today()
+    active_dates = db.query(ActivityLog.date).distinct().order_by(ActivityLog.date.desc()).all()
+    active_dates = [d[0] for d in active_dates]
+    
+    if not active_dates:
+        return {"current_streak": 0, "longest_streak": 0}
+    
+    current_streak = 0
+    check_date = today
+    
+    if active_dates[0] != today.isoformat():
+        check_date = today - datetime.timedelta(days=1)
+    
+    for date_str in active_dates:
+        if date_str == check_date.isoformat():
+            current_streak += 1
+            check_date -= datetime.timedelta(days=1)
+        elif date_str < check_date.isoformat():
+            break
+    
+    longest_streak = 0
+    streak = 0
+    prev_date = None
+    for date_str in sorted(active_dates):
+        if prev_date is None or (datetime.date.fromisoformat(date_str) - prev_date).days == 1:
+            streak += 1
+        else:
+            streak = 1
+        longest_streak = max(longest_streak, streak)
+        prev_date = datetime.date.fromisoformat(date_str)
+    
+    return {"current_streak": current_streak, "longest_streak": longest_streak}

@@ -55,3 +55,15 @@ export interface VocabReview {
   ef: number;
   occurrences?: { book: string; sentence: string }[];
 }
+
+export interface ActivityDay {
+  date: string;
+  book_count: number;
+  word_count: number;
+  review_count: number;
+}
+
+export interface StreakInfo {
+  current_streak: number;
+  longest_streak: number;
+}
