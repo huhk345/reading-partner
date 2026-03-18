@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { ArrowLeft, Volume2, Plus, History, X, BookOpen, FileText, RefreshCw } from 'lucide-react';
 import { Book, WordDefinition, PageData, Sentence } from '../types';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -148,6 +148,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const lastFetchedBookId = useRef<number | null>(null);
 
@@ -652,7 +653,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
             </div>
             </div>
             )}
-      {/* Word Definition Modal (Same as before but integrated) */}
+      {/* Word Definition Modal */}
       <AnimatePresence>
         {isDialogOpen && (
           <>
@@ -664,10 +665,18 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-[100]"
             />
             <motion.div
-              initial={{ opacity: 0, y: 100, scale: 0.9 }}
+              layout
+              initial={{ opacity: 0, y: 100, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 100, scale: 0.9 }}
-              className="fixed inset-x-4 bottom-8 z-[101] clay-card bg-white p-8 max-w-2xl mx-auto shadow-2xl border-t-8 border-indigo-500"
+              exit={{ opacity: 0, y: 100, scale: 0.95 }}
+              transition={{ 
+                type: 'spring', 
+                damping: 25, 
+                stiffness: 300,
+                layout: { duration: 0.3 }
+              }}
+              className="fixed inset-x-4 bottom-8 z-[101] clay-card bg-white p-8 max-w-2xl mx-auto shadow-2xl border-t-8 border-indigo-500 overflow-hidden"
+              style={{ transition: 'none' }}
             >
               <div className="absolute top-4 right-4 flex gap-3">
                 <button
@@ -690,12 +699,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                 <div className="w-full mr-8">
                   {/* Lemma Tags - Show when word !== lemma */}
                   {lemma && (
-                    <motion.div 
+                    <div 
                       key={activeWord}
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25, ease: 'easeOut' }}
                       className="flex items-center gap-2 mb-3 overflow-hidden"
                     >
                       <button
@@ -724,13 +729,20 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       >
                         {lemma}
                       </button>
-                    </motion.div>
+                    </div>
                   )}
                   <div className={`transition-all duration-300 ${(isLoadingWord && selectedWord?.meaning) ? 'blur-[4px] pointer-events-none' : ''}`}>
                     <input
+                      ref={inputRef}
                       type="text"
                       value={inputWord}
                       onChange={(e) => setInputWord(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && inputWord.trim()) {
+                          lookupWord(inputWord.trim(), lastSentenceId, false);
+                          inputRef.current?.blur();
+                        }
+                      }}
                       className="text-4xl font-bold text-indigo-600 mb-1 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-lg w-full transition-all"
                       placeholder="Type a word..."
                     />
@@ -751,76 +763,70 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               </div>
 
               <div className="relative min-h-[200px]">
-                {isLoadingWord && !selectedWord?.meaning && (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                    <p className="text-slate-500 font-medium">Looking up &quot;{inputWord}&quot;...</p>
-                  </div>
-                )}
-
-                {(selectedWord?.meaning || !isLoadingWord) && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ 
-                      opacity: 1,
-                      filter: (isLoadingWord && selectedWord?.meaning) ? 'blur(4px)' : 'blur(0px)'
-                    }}
-                    transition={{ duration: 0.2 }}
-                    className={`min-h-[200px] transition-all duration-300 ${(isLoadingWord && selectedWord?.meaning) ? 'pointer-events-none' : ''}`}
-                  >
-                  <motion.div
-                    key={selectedWord?.word}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    transition={{ duration: 0.3, ease: 'easeOut' }}
-                    className="overflow-hidden"
-                  >
-                  <div className="mb-8">
-                    <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-indigo-400 rounded-full" />
-                      What it means
-                    </h4>
-                    <motion.p 
-                      key={selectedWord?.word}
+                <AnimatePresence mode="wait">
+                  {isLoadingWord && !selectedWord?.meaning ? (
+                    <motion.div
+                      key="loading"
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line"
+                      exit={{ opacity: 0, y: -10 }}
+                      className="flex flex-col items-center justify-center py-12"
                     >
-                      {selectedWord?.meaning}
-                    </motion.p>
-                  </div>
-
-                  {selectedWord?.occurrences && selectedWord.occurrences.length > 0 && (
-                    <div className="mb-8">
-                      <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <History className="w-4 h-4" />
-                        Seen before
-                      </h4>
-                      <div className="max-h-32 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                        {selectedWord.occurrences.map((occ, idx) => (
-                          <div key={idx} className="p-4 bg-slate-50 rounded-2xl text-slate-600 italic border-l-4 border-slate-200">
-                            &quot;{occ.sentence}&quot;
-                            <span className="block text-xs text-slate-400 mt-2 not-italic font-bold uppercase tracking-wider">
-                              From: {occ.book}
-                            </span>
-                          </div>
-                        ))}
+                      <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                      <p className="text-slate-500 font-medium">Looking up &quot;{inputWord}&quot;...</p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key={selectedWord?.word || 'content'}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.2 }}
+                      className={`transition-all duration-300 ${(isLoadingWord && selectedWord?.meaning) ? 'pointer-events-none' : ''}`}
+                      style={{
+                        filter: (isLoadingWord && selectedWord?.meaning) ? 'blur(4px)' : 'blur(0px)'
+                      }}
+                    >
+                      <div className="mb-8">
+                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-indigo-400 rounded-full" />
+                          What it means
+                        </h4>
+                        <p className="text-slate-700 text-xl leading-relaxed font-medium whitespace-pre-line">
+                          {selectedWord?.meaning}
+                        </p>
                       </div>
-                    </div>
-                  )}
 
-                  <button
-                    onClick={addToVocab}
-                    disabled={!selectedWord?.id}
-                    className="clay-button clay-primary w-full py-4 text-xl flex items-center justify-center gap-3 shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus className="w-6 h-6" />
-                    Add to My Word Bank
-                  </button>
-                </motion.div>
-                </motion.div>
-              )}
+                      {selectedWord?.occurrences && selectedWord.occurrences.length > 0 && (
+                        <div className="mb-8">
+                          <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <History className="w-4 h-4" />
+                            Seen before
+                          </h4>
+                          <div className="max-h-32 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                            {selectedWord.occurrences.map((occ, idx) => (
+                              <div key={idx} className="p-4 bg-slate-50 rounded-2xl text-slate-600 italic border-l-4 border-slate-200">
+                                &quot;{occ.sentence}&quot;
+                                <span className="block text-xs text-slate-400 mt-2 not-italic font-bold uppercase tracking-wider">
+                                  From: {occ.book}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={addToVocab}
+                        disabled={!selectedWord?.id}
+                        className="clay-button clay-primary w-full py-4 text-xl flex items-center justify-center gap-3 shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Plus className="w-6 h-6" />
+                        Add to My Word Bank
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </motion.div>
           </>
