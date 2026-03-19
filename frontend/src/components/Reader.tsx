@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
-import { ArrowLeft, Volume2, Plus, History, X, BookOpen, FileText, RefreshCw } from 'lucide-react';
-import { Book, WordDefinition, PageData, Sentence } from '../types';
+import { ArrowLeft, Volume2, Plus, History, X, BookOpen, FileText, RefreshCw, Play, Pause } from 'lucide-react';
+import { Book, WordDefinition, PageData, Sentence, WordData } from '../types';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -31,23 +31,73 @@ interface WordOverlayProps {
   onSentencePlay: (sentenceText: string) => void;
   pageIndex: number;
   sentences?: Sentence[];
-  findSentenceForWord: (word: string) => Sentence | null;
+  currentlyPlayingSentence: string | null;
 }
 
-function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, findSentenceForWord }: WordOverlayProps) {
+function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, currentlyPlayingSentence }: WordOverlayProps) {
+  const [hoveredSentence, setHoveredSentence] = useState<{
+    text: string;
+    bbox: { top: number; left: number; right: number; bottom: number };
+  } | null>(null);
+
   if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
     return null;
   }
 
   const pointToPixel = renderedWidth / pageData.width;
 
-  const isFirstWordOfSentence = (wordText: string, idx: number): boolean => {
-    if (idx === 0) return true;
-    const prevWord = pageData.words[idx - 1];
-    if (!prevWord) return true;
-    const prevEndsWithPunctuation = /[.!?]$/.test(prevWord.text.replace(/\s+$/, ''));
-    return prevEndsWithPunctuation;
+  // Group words into sentences on this page based on punctuation
+  const sentenceGroups = useMemo(() => {
+    const groups: { text: string; words: WordData[] }[] = [];
+    let currentWords: WordData[] = [];
+    
+    pageData.words.forEach((word, idx) => {
+      currentWords.push(word);
+      const endsWithPunctuation = /[.!?]$/.test(word.text.replace(/\s+$/, ''));
+      if (endsWithPunctuation || idx === pageData.words.length - 1) {
+        groups.push({
+          text: currentWords.map(w => w.text).join(' '),
+          words: [...currentWords]
+        });
+        currentWords = [];
+      }
+    });
+    return groups;
+  }, [pageData.words]);
+
+  const handleMouseEnter = (wordIdx: number) => {
+    // Find which group this word belongs to
+    let currentCount = 0;
+    const group = sentenceGroups.find(g => {
+      const start = currentCount;
+      const end = currentCount + g.words.length;
+      currentCount = end;
+      return wordIdx >= start && wordIdx < end;
+    });
+
+    if (group) {
+      const top = Math.min(...group.words.map(w => w.bbox[1] * pointToPixel));
+      const left = Math.min(...group.words.map(w => w.bbox[0] * pointToPixel));
+      const right = Math.max(...group.words.map(w => w.bbox[2] * pointToPixel));
+      const bottom = Math.max(...group.words.map(w => w.bbox[3] * pointToPixel));
+      
+      setHoveredSentence({
+        text: group.text,
+        bbox: { top, left, right, bottom }
+      });
+    }
   };
+
+  const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.text;
+  const activeSentenceWords = useMemo(() => {
+    if (hoveredSentence) {
+      return sentenceGroups.find(g => g.text === hoveredSentence.text)?.words || [];
+    }
+    if (currentlyPlayingSentence) {
+      return sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words || [];
+    }
+    return [];
+  }, [hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
 
   return (
     <div 
@@ -56,7 +106,95 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         width: renderedWidth, 
         height: renderedHeight 
       }}
+      onMouseLeave={() => setHoveredSentence(null)}
     >
+      {/* Sentence Highlight */}
+      <AnimatePresence>
+        {(hoveredSentence || currentlyPlayingSentence) && activeSentenceWords.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute pointer-events-none"
+          >
+            {(() => {
+              const lines = new Map<number, typeof activeSentenceWords>();
+              activeSentenceWords.forEach(w => {
+                const existing = lines.get(w.line) || [];
+                existing.push(w);
+                lines.set(w.line, existing);
+              });
+              return Array.from(lines.values()).map((lineWords, i) => {
+                const left = Math.min(...lineWords.map(w => w.bbox[0] * pointToPixel)) - 4;
+                const top = Math.min(...lineWords.map(w => w.bbox[1] * pointToPixel)) - 3;
+                const right = Math.max(...lineWords.map(w => w.bbox[2] * pointToPixel)) + 4;
+                const bottom = Math.max(...lineWords.map(w => w.bbox[3] * pointToPixel)) + 3;
+                return (
+                  <div
+                    key={`line-${i}`}
+                    className={`absolute rounded transition-colors duration-300 ${
+                      currentlyPlayingSentence === (hoveredSentence?.text || currentlyPlayingSentence)
+                        ? 'bg-green-500/20'
+                        : 'bg-indigo-500/10'
+                    }`}
+                    style={{
+                      left: `${left}px`,
+                      top: `${top}px`,
+                      width: `${right - left}px`,
+                      height: `${bottom - top}px`,
+                    }}
+                  />
+                );
+              });
+            })()}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Sentences Hover Action Button */}
+      <AnimatePresence>
+        {(hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.text === currentlyPlayingSentence))) && (
+          <motion.div
+            initial={{ opacity: 0, y: 5, x: 0 }}
+            animate={{ opacity: 1, y: 0, x: 0 }}
+            exit={{ opacity: 0, y: 5, x: 0 }}
+            className="pointer-events-auto absolute z-[80] pt-6" // pt-6 creates a hover 'bridge'
+            style={{
+              top: `${(hoveredSentence?.bbox.top || Math.min(...(sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words.map(w => w.bbox[1] * pointToPixel) || [0]))) - 50}px`,
+              left: `${hoveredSentence ? hoveredSentence.bbox.left : ((sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words[0]?.bbox[0] || 0) * pointToPixel)}px`,
+            }}
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hoveredSentence) onSentencePlay(hoveredSentence.text);
+              }}
+              className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 group/btn border border-white/20 backdrop-blur-sm ${
+                isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              {isPlaying ? (
+                <div className="flex items-center gap-0.5 h-3">
+                  {[1, 2, 3].map((i) => (
+                    <motion.div
+                      key={i}
+                      animate={{ height: [3, 12, 3] }}
+                      transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                      className="w-0.5 bg-white rounded-full"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Play className="w-4 h-4 text-white fill-white group-hover/btn:scale-110 transition-transform" />
+              )}
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+                {isPlaying ? 'Reading...' : 'Read Sentence'}
+              </span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {pageData.words.map((word, idx) => {
         // Only render words that contain at least one alphabet character
         if (!/[a-zA-Z]/.test(word.text)) {
@@ -64,40 +202,24 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         }
 
         const [x0, y0, x1, y1] = word.bbox;
-        
-        const sentence = findSentenceForWord(word.text);
-        const showPlayButton = sentence && isFirstWordOfSentence(word.text, idx);
-        
-        // Remove symbols (anything not a word character or space) for the hover text
         const hoverText = word.text.replace(/[^\w\s'’]|_/g, "").trim();
 
         return (
           <div
             key={`${word.text}-${idx}`}
-            className="absolute cursor-pointer pointer-events-auto bg-transparent hover:bg-indigo-500/20 hover:ring-1 hover:ring-indigo-500/30 rounded-sm transition-all duration-75 group"
+            className="absolute cursor-pointer pointer-events-auto bg-transparent hover:bg-indigo-500/10 rounded-sm transition-all duration-75 group"
             style={{
               left: `${x0 * pointToPixel}px`,
               top: `${y0 * pointToPixel}px`,
               width: `${(x1 - x0) * pointToPixel}px`,
               height: `${(y1 - y0) * pointToPixel}px`,
             }}
+            onMouseEnter={() => handleMouseEnter(idx)}
             onClick={(e) => {
               e.stopPropagation();
               onWordClick(word.text);
             }}
           >
-            {showPlayButton && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (sentence) onSentencePlay(sentence.text);
-                }}
-                className="opacity-0 group-hover:opacity-100 absolute -right-8 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-500 text-white rounded-full shadow-lg hover:bg-indigo-600 transition-all z-[80] cursor-pointer"
-                title="Play sentence"
-              >
-                <Volume2 className="w-4 h-4" />
-              </button>
-            )}
             <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
                 {hoverText}
             </div>
@@ -134,6 +256,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [reparsing, setReparsing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isReadingWord, setIsReadingWord] = useState(false);
+  const [currentlyPlayingSentence, setCurrentlyPlayingSentence] = useState<string | null>(null);
   const [hoveredWordPos, setHoveredWordPos] = useState<{x: number, y: number, sentenceId?: number, sentenceText?: string} | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -414,8 +537,11 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const handleSentencePlay = async (sentenceText: string) => {
     setIsSpeaking(true);
-    await speak(sentenceText);
-    setIsSpeaking(false);
+    setCurrentlyPlayingSentence(sentenceText);
+    await speak(sentenceText, undefined, () => {
+      setIsSpeaking(false);
+      setCurrentlyPlayingSentence(null);
+    });
   };
 
   const fallbackSpeak = (text: string, onComplete?: () => void) => {
@@ -535,7 +661,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                             onSentencePlay={handleSentencePlay}
                             pageIndex={index}
                             sentences={book.sentences}
-                            findSentenceForWord={findSentenceContainingWord}
+                            currentlyPlayingSentence={currentlyPlayingSentence}
                         />
                     )}
 
@@ -561,37 +687,64 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                   {reparsing ? 'Reparsing...' : 'Reparse Book'}
                 </button>
               </div>
-              {book.sentences?.length ? book.sentences.map((sentence) => (
-                <span key={sentence.id} className="group/sentence hover:bg-slate-50 rounded px-2 py-1 -mx-2 transition-colors relative">
-                  {sentence.text.split(/\s+/).map((word, wIdx) => {
-                    // Only show words that contain at least one alphabet character
-                    if (!/[a-zA-Z]/.test(word)) return null;
-                    
-                    // Remove symbols for cleaner reading view
-                    const cleanDisplayWord = word.replace(/[^\w\s'’]|_/g, "").trim();
-                    if (!cleanDisplayWord) return null;
+              {book.sentences?.length ? book.sentences.map((sentence) => {
+                const isPlaying = currentlyPlayingSentence === sentence.text;
+                return (
+                  <span key={sentence.id} className={`group/sentence rounded px-2 py-1 -mx-2 transition-colors relative inline-block ${
+                    isPlaying ? 'bg-green-50' : 'hover:bg-indigo-50/50'
+                  }`}>
+                    {sentence.text.split(/\s+/).map((word, wIdx) => {
+                      // Only show words that contain at least one alphabet character
+                      if (!/[a-zA-Z]/.test(word)) return null;
+                      
+                      // Remove symbols for cleaner reading view
+                      const cleanDisplayWord = word.replace(/[^\w\s'’]|_/g, "").trim();
+                      if (!cleanDisplayWord) return null;
 
-                    return (
-                      <span
-                        key={wIdx}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleWordClick(word, sentence.id);
-                        }}
-                        className="cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 px-0.5 rounded transition-all inline-block"
+                      return (
+                        <span
+                          key={wIdx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleWordClick(word, sentence.id);
+                          }}
+                          className="cursor-pointer hover:bg-indigo-100 hover:text-indigo-700 px-0.5 rounded transition-all inline-block"
+                        >
+                          {cleanDisplayWord}{' '}
+                        </span>
+                      );
+                    })}
+                    <div className={`absolute -top-12 left-0 pt-6 pointer-events-auto z-10 transition-all duration-300 ${
+                      isPlaying ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 group-hover/sentence:opacity-100 group-hover/sentence:translate-y-0'
+                    }`}>
+                      <button 
+                        onClick={() => handleSentencePlay(sentence.text)}
+                        className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 whitespace-nowrap border border-white/20 backdrop-blur-sm ${
+                          isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                        }`}
                       >
-                        {cleanDisplayWord}{' '}
-                      </span>
-                    );
-                  })}
-                  <button 
-                    onClick={() => speak(sentence.text)}
-                    className="opacity-0 group-hover/sentence:opacity-100 absolute -right-12 top-1/2 -translate-y-1/2 p-2 text-slate-300 hover:text-indigo-500 transition-all"
-                  >
-                    <Volume2 className="w-5 h-5" />
-                  </button>
-                </span>
-              )) : (
+                        {isPlaying ? (
+                          <div className="flex items-center gap-0.5 h-3">
+                            {[1, 2, 3].map((i) => (
+                              <motion.div
+                                key={i}
+                                animate={{ height: [3, 12, 3] }}
+                                transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                                className="w-0.5 bg-white rounded-full"
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <Play className="w-4 h-4 text-white fill-white group-hover:scale-110 transition-transform" />
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+                          {isPlaying ? 'Reading...' : 'Read Sentence'}
+                        </span>
+                      </button>
+                    </div>
+                  </span>
+                );
+              }) : (
                 <p className="text-slate-400 italic">No text extracted yet.</p>
               )}
             </div>
@@ -866,7 +1019,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
               }
               setDialogConfig(prev => ({ ...prev, isOpen: false }));
             }}
-            className="clay-button clay-primary px-6 py-2"
+            className="px-5 py-2.5 rounded-2xl font-bold transition-all text-base bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105"
           >
             {dialogConfig.confirmText || "OK"}
           </button>

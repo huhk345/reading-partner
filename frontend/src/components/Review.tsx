@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Check, Volume2, Sparkles, History, RotateCw } from 'lucide-react';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
@@ -211,7 +211,8 @@ export default function Review({ onBack }: ReviewProps) {
         <Title 
           title="Word Wall" 
           subtitle="Your magical word collection!"
-          badge={{ icon: <Sparkles className="w-5 h-5 text-yellow-500" />, text: `${reviews.length} words collected!` }}
+          icon={<BookOpen className="w-8 h-8 text-white drop-shadow-lg" />}
+          badge={{ icon: <Target className="w-5 h-5 text-white" />, text: `${reviews.length} words collected!` }}
         />
 
         <motion.div 

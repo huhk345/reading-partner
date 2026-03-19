@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
 import Calendar from '@/components/Calendar';
-import { ArrowLeft, GraduationCap, BookOpen, Star, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, GraduationCap, BookOpen, Star, Calendar as CalendarIcon, Trophy } from 'lucide-react';
 
 export default function Home() {
   const [view, setView] = useState<'library' | 'reader' | 'review' | 'calendar'>('library');
@@ -87,7 +87,7 @@ export default function Home() {
             <Title 
               title="My Magic Library" 
               subtitle="Pick a book and start your adventure!"
-              badge={{ icon: <Star className="w-5 h-5 text-yellow-500" />, text: "Keep your streak going!" }}
+              badge={{ icon: <Trophy className="w-5 h-5 text-white" />, text: "Keep your streak going!" }}
             />
             
             <BookList onSelectBook={handleSelectBook} />

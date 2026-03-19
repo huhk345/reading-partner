@@ -236,7 +236,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
               Upload a PDF or EPUB to begin your magical reading journey.
             </p>
             
-            <div className="clay-button clay-primary py-4 px-10 text-xl inline-flex items-center gap-3 shadow-xl shadow-green-200/50 hover:shadow-green-300/50">
+            <div className="rounded-2xl font-bold transition-all bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 group py-4 px-10 text-xl inline-flex items-center gap-3">
               {uploading ? (
                 <>
                   <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />

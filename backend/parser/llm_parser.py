@@ -83,6 +83,7 @@ def get_book_info_and_clean_text(text_sample):
 def split_sentences_regex(text):
     """
     Splits text into sentences using regex based on '.', '?', '!' and other sentence-ending symbols.
+    Handles common abbreviations (Mrs., Mr., Ms., Dr., etc.) to avoid false splits.
     """
     if not text:
         return []
@@ -90,11 +91,26 @@ def split_sentences_regex(text):
     # Pre-cleaning: replace multiple spaces and newlines
     text = re.sub(r'\s+', ' ', text).strip()
     
+    # Protect common abbreviations by replacing them temporarily
+    abbreviations = [
+        r'Mrs\.', r'Mr\.', r'Ms\.', r'Dr\.', r'Prof\.', r'Sr\.', r'Jr\.',
+        r'St\.', r'Ave\.', r'Blvd\.', r'Rd\.',
+        r'etc\.', r'vs\.', r'Inc\.', r'Ltd\.', r'Corp\.',
+        r'vol\.', r'ch\.', r'fig\.', r'approx\.',
+        r'A\.M\.', r'P\.M\.', r'a\.m\.', r'p\.m\.',
+        r'U\.S\.', r'U\.K\.', r'E\.U\.',
+    ]
+    abbreviation_pattern = '|'.join(abbreviations)
+    
+    # Replace abbreviations with a placeholder that won't be split on
+    protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), text)
+    
     # Split by '.', '?', '!' followed by space or end of string
-    # We use a lookbehind to keep the punctuation
-    # Symbols: . ! ? … (ellipsis)
     sentence_endings = r'(?<=[.!?…])\s+'
-    sentences = re.split(sentence_endings, text)
+    sentences = re.split(sentence_endings, protected)
+    
+    # Restore the periods in abbreviations
+    sentences = [s.replace('\x00', '.') for s in sentences]
     
     return [s.strip() for s in sentences if s.strip()]
 

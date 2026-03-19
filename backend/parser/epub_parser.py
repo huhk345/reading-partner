@@ -45,9 +45,20 @@ def parse_epub(file_path):
     # Replace multiple newlines with a single newline
     full_text = re.sub(r'\n+', '\n', full_text)
     
-    # Simple sentence splitting logic (same as PDF for now)
+    # Sentence splitting with abbreviation protection
     clean_text = re.sub(r'\n+', ' ', full_text)
-    sentences = re.split(r'(?<=[.!?])\s+', clean_text)
+    abbreviations = [
+        r'Mrs\.', r'Mr\.', r'Ms\.', r'Dr\.', r'Prof\.', r'Sr\.', r'Jr\.',
+        r'St\.', r'Ave\.', r'Blvd\.', r'Rd\.',
+        r'etc\.', r'vs\.', r'Inc\.', r'Ltd\.', r'Corp\.',
+        r'vol\.', r'ch\.', r'fig\.', r'approx\.',
+        r'A\.M\.', r'P\.M\.', r'a\.m\.', r'p\.m\.',
+        r'U\.S\.', r'U\.K\.', r'E\.U\.',
+    ]
+    abbreviation_pattern = '|'.join(abbreviations)
+    protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), clean_text)
+    sentences = re.split(r'(?<=[.!?])\s+', protected)
+    sentences = [s.replace('\x00', '.') for s in sentences]
     
     # Return empty pages_data for now
     return full_text, [s.strip() for s in sentences if s.strip()], [], cover_image
