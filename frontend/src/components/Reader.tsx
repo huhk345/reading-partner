@@ -34,9 +34,10 @@ interface WordOverlayProps {
   currentlyPlayingSentence: string | null;
 }
 
-function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, currentlyPlayingSentence }: WordOverlayProps) {
+function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, sentences, currentlyPlayingSentence }: WordOverlayProps) {
   const [hoveredSentence, setHoveredSentence] = useState<{
     text: string;
+    backendSentenceText: string;
     bbox: { top: number; left: number; right: number; bottom: number };
   } | null>(null);
 
@@ -48,22 +49,48 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
   // Group words into sentences on this page based on punctuation
   const sentenceGroups = useMemo(() => {
-    const groups: { text: string; words: WordData[] }[] = [];
+    const groups: { text: string; words: WordData[], isValid: boolean, backendSentenceText: string }[] = [];
     let currentWords: WordData[] = [];
+    
+    const normalizedSentences = (sentences || []).map((s: Sentence) => ({
+      text: s.text,
+      normalized: s.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+    }));
     
     pageData.words.forEach((word, idx) => {
       currentWords.push(word);
       const endsWithPunctuation = /[.!?]$/.test(word.text.replace(/\s+$/, ''));
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
+        const text = currentWords.map(w => w.text).join(' ');
+        const normalizedText = text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        
+        let isValid = false;
+        let backendSentenceText = text;
+
+        if (normalizedText.length > 0) {
+            const match = normalizedSentences.find((s: { text: string; normalized: string }) => {
+                if (normalizedText.length <= 5) {
+                    return s.normalized === normalizedText;
+                }
+                return s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
+            });
+            if (match) {
+                isValid = true;
+                backendSentenceText = match.text;
+            }
+        }
+
         groups.push({
-          text: currentWords.map(w => w.text).join(' '),
-          words: [...currentWords]
+          text,
+          words: [...currentWords],
+          isValid,
+          backendSentenceText
         });
         currentWords = [];
       }
     });
     return groups;
-  }, [pageData.words]);
+  }, [pageData.words, sentences]);
 
   const handleMouseEnter = (wordIdx: number) => {
     // Find which group this word belongs to
@@ -75,26 +102,32 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       return wordIdx >= start && wordIdx < end;
     });
 
-    if (group) {
+    if (group && group.isValid) {
+      console.log('[Hover] Backend sentence:', group.backendSentenceText);
+
       const top = Math.min(...group.words.map(w => w.bbox[1] * pointToPixel));
       const left = Math.min(...group.words.map(w => w.bbox[0] * pointToPixel));
       const right = Math.max(...group.words.map(w => w.bbox[2] * pointToPixel));
       const bottom = Math.max(...group.words.map(w => w.bbox[3] * pointToPixel));
-      
+
       setHoveredSentence({
         text: group.text,
+        backendSentenceText: group.backendSentenceText,
         bbox: { top, left, right, bottom }
       });
+    } else {
+      setHoveredSentence(null);
     }
   };
 
-  const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.text;
+  const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.backendSentenceText;
   const activeSentenceWords = useMemo(() => {
     if (hoveredSentence) {
       return sentenceGroups.find(g => g.text === hoveredSentence.text)?.words || [];
     }
     if (currentlyPlayingSentence) {
-      return sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words || [];
+      const playingGroups = sentenceGroups.filter(g => g.backendSentenceText === currentlyPlayingSentence);
+      return playingGroups.flatMap(g => g.words);
     }
     return [];
   }, [hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
@@ -133,7 +166,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                   <div
                     key={`line-${i}`}
                     className={`absolute rounded transition-colors duration-300 ${
-                      currentlyPlayingSentence === (hoveredSentence?.text || currentlyPlayingSentence)
+                      currentlyPlayingSentence === (hoveredSentence?.backendSentenceText || currentlyPlayingSentence)
                         ? 'bg-green-500/20'
                         : 'bg-indigo-500/10'
                     }`}
@@ -153,21 +186,22 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
       {/* Sentences Hover Action Button */}
       <AnimatePresence>
-        {(hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.text === currentlyPlayingSentence))) && (
+        {(hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.backendSentenceText === currentlyPlayingSentence))) && (
           <motion.div
             initial={{ opacity: 0, y: 5, x: 0 }}
             animate={{ opacity: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, y: 5, x: 0 }}
             className="pointer-events-auto absolute z-[80] pt-6" // pt-6 creates a hover 'bridge'
             style={{
-              top: `${(hoveredSentence?.bbox.top || Math.min(...(sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words.map(w => w.bbox[1] * pointToPixel) || [0]))) - 50}px`,
-              left: `${hoveredSentence ? hoveredSentence.bbox.left : ((sentenceGroups.find(g => g.text === currentlyPlayingSentence)?.words[0]?.bbox[0] || 0) * pointToPixel)}px`,
+              top: `${(hoveredSentence?.bbox.top || Math.min(...(sentenceGroups.find(g => g.backendSentenceText === currentlyPlayingSentence)?.words.map(w => w.bbox[1] * pointToPixel) || [0]))) - 50}px`,
+              left: `${hoveredSentence ? hoveredSentence.bbox.left : ((sentenceGroups.find(g => g.backendSentenceText === currentlyPlayingSentence)?.words[0]?.bbox[0] || 0) * pointToPixel)}px`,
             }}
           >
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (hoveredSentence) onSentencePlay(hoveredSentence.text);
+                if (hoveredSentence) onSentencePlay(hoveredSentence.backendSentenceText);
+                else if (currentlyPlayingSentence) onSentencePlay(currentlyPlayingSentence);
               }}
               className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 group/btn border border-white/20 backdrop-blur-sm ${
                 isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
@@ -704,6 +738,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       return (
                         <span
                           key={wIdx}
+                          onMouseEnter={() => console.log('[Hover] Backend sentence:', sentence.text)}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleWordClick(word, sentence.id);
