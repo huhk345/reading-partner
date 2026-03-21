@@ -106,7 +106,8 @@ def split_sentences_regex(text):
     protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), text)
     
     # Split by '.', '?', '!' followed by space or end of string
-    sentence_endings = r'(?<=[.!?…])\s+'
+    # Also split on patterns like .” “ where closing quote + space + opening quote separates sentences
+    sentence_endings = r'(?<=[.!?…])(?:\s+|[”"]\s+[“"\'])'
     sentences = re.split(sentence_endings, protected)
     
     # Restore the periods in abbreviations

@@ -5,9 +5,14 @@ from pytesseract import Output
 from PIL import Image, ImageFilter, ImageOps
 import io
 import os
+import sys
 import numpy as np
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
+
+# Ensure backend root is in path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from dictionary.lookup import get_ecdict_entry
 
 def preprocess_for_ocr(pil_image):
     """
@@ -143,9 +148,9 @@ def reorder_and_build_text(page_words, width):
     ordered_words = [page_words[i] for i in ordered_indices]
     return ordered_words, page_text
 
-def _ocr_extract(img, zoom, page_width):
-    """Run Tesseract OCR on an image and return (words, text)."""
-    data = pytesseract.image_to_data(img, output_type=Output.DICT)
+def _ocr_extract(img, zoom, page_width, config='--psm 3'):
+    """Run Tesseract OCR on an image and return (words, text, data)."""
+    data = pytesseract.image_to_data(img, output_type=Output.DICT, config=config)
 
     page_words = []
     for i in range(len(data['text'])):
@@ -163,7 +168,58 @@ def _ocr_extract(img, zoom, page_width):
             })
 
     ordered_words, page_text = reorder_and_build_text(page_words, page_width)
-    return ordered_words, page_text
+    return ordered_words, page_text, data
+
+def calculate_ocr_score(words, data):
+    """
+    Calculate a score for the OCR result based on:
+    1. Average confidence (from Tesseract)
+    2. Real word ratio (using local dictionary)
+    """
+    # 1. Average confidence
+    confs = [int(c) for c in data['conf'] if int(c) >= 0]
+    avg_conf = np.mean(confs) if confs else 0
+
+    # 2. Real word ratio
+    unique_words = set(w['text'].lower() for w in words if w['text'].isalpha() and len(w['text']) > 1)
+    if not unique_words:
+        # If no valid words found, rely solely on confidence (scaled down)
+        return avg_conf * 0.1
+
+    real_word_count = 0
+    for w in unique_words:
+        if get_ecdict_entry(w):
+            real_word_count += 1
+    
+    real_word_ratio = real_word_count / len(unique_words)
+
+    # Heuristic: Score = real_word_ratio * 70 + (avg_conf / 100) * 30
+    # Prioritize getting real words over high-confidence garbage
+    score = (real_word_ratio * 70) + (avg_conf * 0.3)
+    return score
+
+def best_ocr_extract(img, zoom, page_width):
+    """
+    Run OCR with both --psm 3 and --psm 4, and choose the better result.
+    Returns: (words, text, score)
+    """
+    # Try PSM 3 (Fully automatic page segmentation, but no OSD)
+    words_3, text_3, data_3 = _ocr_extract(img, zoom, page_width, config='--psm 3')
+    # print(' '.join(w['text'] for w in words_3))
+    score_3 = calculate_ocr_score(words_3, data_3)
+    print(f"PSM 3 Score: {score_3:.2f}")
+    # Try PSM 4 (Assume a single column of text of variable sizes)
+    words_4, text_4, data_4 = _ocr_extract(img, zoom, page_width, config='--psm 4')
+    # print(' '.join(w['text'] for w in words_4))
+    score_4 = calculate_ocr_score(words_4, data_4)
+    print(f"PSM 4 Score: {score_4:.2f}")
+    
+    # print(f"OCR Comparison - PSM 3 Score: {score_3:.2f}, PSM 4 Score: {score_4:.2f}")
+
+    if score_4 > score_3:
+        return words_4, text_4, score_4
+    else:
+        return words_3, text_3, score_3
 
 
 def parse_pdf(file_path, debug=False):
@@ -191,6 +247,10 @@ def parse_pdf(file_path, debug=False):
         words = page.get_text("words")
         page_words = []
         for w in words:
+            if w[4] == "|":
+                w = list(w)
+                w[4] = "I"
+                w = tuple(w)
             page_words.append({
                 "text": w[4],
                 "bbox": [w[0], w[1], w[2], w[3]],
@@ -229,21 +289,21 @@ def parse_pdf(file_path, debug=False):
                 debug_path = os.path.join(debug_dir, f"page_{page_num + 1}_preprocessed.png")
                 img.save(debug_path)
 
-            # Primary OCR attempt
-            page_words, page_text = _ocr_extract(img, zoom, page.rect.width)
+            # Primary OCR attempt with preprocessed image
+            page_words, page_text, score = best_ocr_extract(img, zoom, page.rect.width)
 
-            # Fallback: if preprocessing produced empty result, try alternatives
-            if not page_words:
-                # Fallback 1: grayscale + simple threshold (avoids Otsu issues)
-                img_gray = ImageOps.grayscale(img_original)
-                arr = np.array(img_gray)
-                binary = ((arr > 128).astype(np.uint8)) * 255
-                img_thresh = Image.fromarray(binary, mode="L")
-                page_words, page_text = _ocr_extract(img_thresh, zoom, page.rect.width)
-
-            if not page_words:
-                # Fallback 2: original image with no preprocessing
-                page_words, page_text = _ocr_extract(img_original, zoom, page.rect.width)
+            # If score is low, try original image
+            if score < 95:
+                print(f"Page {page_num}: Preprocessed OCR score {score:.2f} < 95. Trying original image...")
+                words_orig, text_orig, score_orig = best_ocr_extract(img_original, zoom, page.rect.width)
+                
+                if score_orig > score:
+                    print(f"Page {page_num}: Original image score {score_orig:.2f} is better. Using original.")
+                    page_words = words_orig
+                    page_text = text_orig
+                    # score = score_orig
+                else:
+                    print(f"Page {page_num}: Preprocessed image score {score:.2f} is better (or equal). Keeping preprocessed.")
 
             full_text += page_text + "\n"
 

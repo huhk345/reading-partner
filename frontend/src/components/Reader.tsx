@@ -61,32 +61,101 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       currentWords.push(word);
       const endsWithPunctuation = /[.!?]$/.test(word.text.replace(/\s+$/, ''));
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
-        const text = currentWords.map(w => w.text).join(' ');
-        const normalizedText = text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        
-        let isValid = false;
-        let backendSentenceText = text;
+        let processing = true;
+        while (processing && currentWords.length > 0) {
+          const text = currentWords.map(w => w.text).join(' ');
+          const normalizedText = text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          
+          let matched = false;
+          
+          if (normalizedText.length > 0) {
+              const match = normalizedSentences.find((s: { text: string; normalized: string }) => {
+                  if (normalizedText.length <= 5) {
+                      return s.normalized === normalizedText;
+                  }
+                  return s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
+              });
 
-        if (normalizedText.length > 0) {
-            const match = normalizedSentences.find((s: { text: string; normalized: string }) => {
-                if (normalizedText.length <= 5) {
-                    return s.normalized === normalizedText;
-                }
-                return s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
-            });
-            if (match) {
-                isValid = true;
-                backendSentenceText = match.text;
-            }
+              if (match) {
+                  // Check if we have a superset (we have more text than the match)
+                  // AND the match is contained within our text.
+                  // We also handle exact match here if we relax the length check, but strictly splitting is for superset.
+                  if (normalizedText.includes(match.normalized) && normalizedText.length > match.normalized.length) {
+                      const matchStart = normalizedText.indexOf(match.normalized);
+                      const matchEnd = matchStart + match.normalized.length;
+                      
+                      let charCount = 0;
+                      let startIndex = 0;
+                      let endIndex = currentWords.length;
+                      
+                      // Identify word boundaries corresponding to the match
+                      for(let i=0; i<currentWords.length; i++) {
+                          const wLen = currentWords[i].text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().length;
+                          const wStart = charCount;
+                          const wEnd = charCount + wLen;
+                          
+                          if (wEnd <= matchStart) {
+                              // Word is fully before match
+                              startIndex = i + 1;
+                          }
+                          if (wStart < matchEnd) {
+                              // Word overlaps with match (at least partially)
+                              endIndex = i + 1;
+                          }
+                          charCount += wLen;
+                      }
+                      
+                      // Split logic
+                      const prefix = currentWords.slice(0, startIndex);
+                      const target = currentWords.slice(startIndex, endIndex);
+                      const suffix = currentWords.slice(endIndex);
+                      
+                      if (prefix.length > 0) {
+                          groups.push({
+                              text: prefix.map(w => w.text).join(' '),
+                              words: prefix,
+                              isValid: false,
+                              backendSentenceText: prefix.map(w => w.text).join(' ')
+                          });
+                      }
+                      
+                      groups.push({
+                          text: target.map(w => w.text).join(' '),
+                          words: target,
+                          isValid: true,
+                          backendSentenceText: match.text
+                      });
+                      
+                      currentWords = suffix;
+                      matched = true;
+                      // Continue loop to process suffix
+                  } else {
+                      // Exact match or subset match (we have partial sentence or exact sentence)
+                      groups.push({
+                          text,
+                          words: [...currentWords],
+                          isValid: true,
+                          backendSentenceText: match.text
+                      });
+                      currentWords = [];
+                      processing = false;
+                      matched = true;
+                  }
+              }
+          }
+
+          if (!matched) {
+              // No match found, group everything as one (invalid/unknown)
+              groups.push({
+                text,
+                words: [...currentWords],
+                isValid: false,
+                backendSentenceText: text
+              });
+              currentWords = [];
+              processing = false;
+          }
         }
-
-        groups.push({
-          text,
-          words: [...currentWords],
-          isValid,
-          backendSentenceText
-        });
-        currentWords = [];
       }
     });
     return groups;
