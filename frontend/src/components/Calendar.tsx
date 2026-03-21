@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, Flame, BookOpen, Type, GraduationCap } from 'lucide-react';
 import { ActivityDay, StreakInfo } from '../types';
@@ -15,6 +15,7 @@ export default function Calendar() {
   const [activityData, setActivityData] = useState<ActivityDay[]>([]);
   const [streak, setStreak] = useState<StreakInfo>({ current_streak: 0, longest_streak: 0 });
   const [selectedDay, setSelectedDay] = useState<ActivityDay | null>(null);
+  const lastFetchedRef = useRef<string>('');
 
   const fetchActivity = useCallback(async () => {
     try {
@@ -36,13 +37,14 @@ export default function Calendar() {
     }
   }, []);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const key = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+    if (lastFetchedRef.current === key) return;
+    
     fetchActivity();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStreak();
-  }, [fetchActivity, fetchStreak]);
+    lastFetchedRef.current = key;
+  }, [fetchActivity, fetchStreak, currentDate]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();

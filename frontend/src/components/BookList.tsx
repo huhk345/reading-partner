@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Book as BookIcon, Plus, RefreshCw } from 'lucide-react';
 import { Book } from '../types';
@@ -19,6 +19,8 @@ interface BookListProps {
 export default function BookList({ onSelectBook }: BookListProps) {
   const [books, setBooks] = useState<Book[]>([]);
   const [uploading, setUploading] = useState(false);
+  const isFetchingRef = useRef(false);
+  const fetchedOnMountRef = useRef(false);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -30,16 +32,22 @@ export default function BookList({ onSelectBook }: BookListProps) {
   });
 
   const fetchBooks = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const response = await axios.get('http://localhost:8000/api/books');
       setBooks(response.data);
     } catch (error) {
       console.error('Error fetching books:', error);
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 
   useEffect(() => {
+    if (fetchedOnMountRef.current) return;
     fetchBooks();
+    fetchedOnMountRef.current = true;
   }, []);
 
   // Poll for books that are still processing

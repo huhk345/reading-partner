@@ -5,3 +5,4 @@ venv/
 reading_partner.db
 uploads/
 .DS_Store
+debug_images/

@@ -2,11 +2,73 @@ import fitz
 import re
 import pytesseract
 from pytesseract import Output
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 import io
+import os
 import numpy as np
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
+
+def preprocess_for_ocr(pil_image):
+    """
+    Preprocess PIL image for better OCR accuracy.
+    
+    Steps:
+    1. Convert to grayscale
+    2. Increase contrast
+    3. Apply slight denoising (median filter)
+    4. Adaptive thresholding via local contrast normalization
+    5. Sharpen text edges
+    
+    Returns preprocessed PIL.Image in mode 'L'.
+    """
+    img = pil_image.copy()
+
+    # 1. Grayscale
+    img = ImageOps.grayscale(img)
+
+    # 2. Increase contrast
+    img = ImageOps.autocontrast(img, cutoff=2)
+
+    # 3. Denoise — median filter (better than Gaussian for salt-and-pepper noise)
+    img = img.filter(ImageFilter.MedianFilter(size=3))
+
+    # 4. Adaptive-like thresholding using numpy
+    arr = np.array(img, dtype=np.float32)
+    # Local mean via Gaussian blur; subtract from original → high-pass
+    from scipy.ndimage import gaussian_filter
+    local_mean = gaussian_filter(arr, sigma=25)
+    arr = arr - local_mean + 128.0
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+    # 5. Otsu-like global threshold on the contrast-enhanced image
+    hist, _ = np.histogram(arr.ravel(), bins=256, range=(0, 256))
+    total = arr.size
+    sum_all = np.sum(np.arange(256) * hist)
+    sum_bg, weight_bg, threshold = 0.0, 0.0, 0
+    max_var = 0.0
+    for t in range(256):
+        weight_bg += hist[t]
+        if weight_bg == 0:
+            continue
+        weight_fg = total - weight_bg
+        if weight_fg == 0:
+            break
+        sum_bg += t * hist[t]
+        mean_bg = sum_bg / weight_bg
+        mean_fg = (sum_all - sum_bg) / weight_fg
+        var = weight_bg * weight_fg * (mean_bg - mean_fg) ** 2
+        if var > max_var:
+            max_var = var
+            threshold = t
+
+    binary = (arr > threshold).astype(np.uint8) * 255
+    img = Image.fromarray(binary, mode="L")
+
+    # 6. Sharpen edges
+    img = img.filter(ImageFilter.SHARPEN)
+
+    return img
 
 def reorder_and_build_text(page_words, width):
     """
@@ -81,7 +143,30 @@ def reorder_and_build_text(page_words, width):
     ordered_words = [page_words[i] for i in ordered_indices]
     return ordered_words, page_text
 
-def parse_pdf(file_path):
+def _ocr_extract(img, zoom, page_width):
+    """Run Tesseract OCR on an image and return (words, text)."""
+    data = pytesseract.image_to_data(img, output_type=Output.DICT)
+
+    page_words = []
+    for i in range(len(data['text'])):
+        if data['text'][i].strip() and int(data['conf'][i]) >= 0:
+            x = data['left'][i] / zoom
+            y = data['top'][i] / zoom
+            w = data['width'][i] / zoom
+            h = data['height'][i] / zoom
+
+            page_words.append({
+                "text": data['text'][i],
+                "bbox": [x, y, x + w, y + h],
+                "block": data['block_num'][i],
+                "line": data['line_num'][i]
+            })
+
+    ordered_words, page_text = reorder_and_build_text(page_words, page_width)
+    return ordered_words, page_text
+
+
+def parse_pdf(file_path, debug=False):
     """
     Parses a PDF file and returns:
     1. full_text: The entire text content.
@@ -127,44 +212,43 @@ def parse_pdf(file_path):
     if not full_text.strip():
         print(f"No text found in {file_path}, attempting OCR...")
         full_text = ""
-        
+
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             zoom = 2
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat)
             img_data = pix.tobytes("png")
-            img = Image.open(io.BytesIO(img_data))
-            
-            # Get detailed data including bounding boxes
-            data = pytesseract.image_to_data(img, output_type=Output.DICT)
-            
-            page_words = []
-            n_boxes = len(data['text'])
-            for i in range(n_boxes):
-                # Filter out empty text and low confidence results if needed
-                if data['text'][i].strip():
-                    # Coordinates are in pixels of the zoomed image
-                    # Need to scale back to PDF points
-                    x = data['left'][i] / zoom
-                    y = data['top'][i] / zoom
-                    w = data['width'][i] / zoom
-                    h = data['height'][i] / zoom
-                    
-                    page_words.append({
-                        "text": data['text'][i],
-                        "bbox": [x, y, x + w, y + h], # x0, y0, x1, y1
-                        "block": data['block_num'][i],
-                        "line": data['line_num'][i]
-                    })
-            
-            # Reorder words and build text using projection profile
-            ordered_words, page_text = reorder_and_build_text(page_words, page.rect.width)
-            
+            img_original = Image.open(io.BytesIO(img_data))
+
+            # Preprocess image for better OCR
+            img = preprocess_for_ocr(img_original)
+            if debug:
+                debug_dir = "debug_images"
+                os.makedirs(debug_dir, exist_ok=True)
+                debug_path = os.path.join(debug_dir, f"page_{page_num + 1}_preprocessed.png")
+                img.save(debug_path)
+
+            # Primary OCR attempt
+            page_words, page_text = _ocr_extract(img, zoom, page.rect.width)
+
+            # Fallback: if preprocessing produced empty result, try alternatives
+            if not page_words:
+                # Fallback 1: grayscale + simple threshold (avoids Otsu issues)
+                img_gray = ImageOps.grayscale(img_original)
+                arr = np.array(img_gray)
+                binary = ((arr > 128).astype(np.uint8)) * 255
+                img_thresh = Image.fromarray(binary, mode="L")
+                page_words, page_text = _ocr_extract(img_thresh, zoom, page.rect.width)
+
+            if not page_words:
+                # Fallback 2: original image with no preprocessing
+                page_words, page_text = _ocr_extract(img_original, zoom, page.rect.width)
+
             full_text += page_text + "\n"
-            
+
             # Update the existing page data with OCR results
-            pages_data[page_num]["words"] = ordered_words
+            pages_data[page_num]["words"] = page_words
 
     # Sentence splitting with abbreviation protection
     clean_text = re.sub(r'\n+', ' ', full_text)

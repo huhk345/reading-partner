@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen } from 'lucide-react';
 import { VocabReview } from '../types';
@@ -147,8 +147,10 @@ const ClayWordCard = ({
 export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const fetchedRef = useRef(false);
 
   const fetchReviews = async () => {
+    if (fetchedRef.current && !loading) return; // Prevent extra calls but allow initial loading
     setLoading(true);
     try {
       // Changed to the new /all endpoint to see everything
@@ -162,7 +164,9 @@ export default function Review({ onBack }: ReviewProps) {
   };
 
   useEffect(() => {
+    if (fetchedRef.current) return;
     fetchReviews();
+    fetchedRef.current = true;
   }, []);
 
   if (loading) return (

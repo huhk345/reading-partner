@@ -1,10 +1,35 @@
 import re
+import sqlite3
+import os
 from difflib import SequenceMatcher
+
+DB_PATH = os.path.join(os.path.dirname(__file__), '../data/ecdict.db')
+
+def is_real_word(word):
+    """Check if word exists in local dictionary database."""
+    word_clean = re.sub(r"[^a-zA-Z']", '', word.lower())
+    print(word_clean)
+    if not word_clean:
+        return False
+    
+    if not os.path.exists(DB_PATH):
+        return False
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM dictionary WHERE word = ? LIMIT 1", (word_clean,))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+    except Exception as e:
+        print(f"Error checking dictionary: {e}")
+        return False
 
 def get_word_similarity(word1, word2):
     """Calculate similarity between two words (0-1)."""
-    w1 = re.sub(r'[^a-zA-Z]', '', word1.lower())
-    w2 = re.sub(r'[^a-zA-Z]', '', word2.lower())
+    w1 = re.sub(r"[^a-zA-Z']", '', word1.lower())
+    w2 = re.sub(r"[^a-zA-Z']", '', word2.lower())
     if not w1 or not w2:
         return 0
     return SequenceMatcher(None, w1, w2).ratio()
@@ -22,11 +47,11 @@ def find_phrase_context(clean_text, ocr_word, window=2):
     Returns list of (before_word, after_word) tuples.
     """
     clean_words = clean_text.lower().split()
-    ocr_clean = re.sub(r'[^a-zA-Z]', '', ocr_word.lower())
+    ocr_clean = re.sub(r"[^a-zA-Z']", '', ocr_word.lower())
     contexts = []
     
     for i, word in enumerate(clean_words):
-        word_clean = re.sub(r'[^a-zA-Z]', '', word.lower())
+        word_clean = re.sub(r"[^a-zA-Z']", '', word.lower())
         if word_clean == ocr_clean:
             before = clean_words[max(0, i-window):i]
             after = clean_words[i+1:min(len(clean_words), i+1+window)]
@@ -54,8 +79,8 @@ def context_similarity(ocr_before, ocr_after, clean_before, clean_after):
 
 def is_likely_ocr_error_context(ocr_word, clean_word, ocr_context, clean_contexts, threshold=0.5):
     """Check if the difference is likely an OCR error using context."""
-    orig_clean = re.sub(r'[^a-zA-Z]', '', ocr_word.lower())
-    corr_clean = re.sub(r'[^a-zA-Z]', '', clean_word.lower())
+    orig_clean = re.sub(r"[^a-zA-Z']", '', ocr_word.lower())
+    corr_clean = re.sub(r"[^a-zA-Z']", '', clean_word.lower())
     
     if orig_clean == corr_clean:
         return False
@@ -87,15 +112,15 @@ def get_word_positions(text):
 def find_best_match_position(ocr_word, ocr_context_before, ocr_context_after, clean_text):
     """Find the best matching position in clean_text considering context."""
     clean_words = clean_text.lower().split()
-    ocr_clean = re.sub(r'[^a-zA-Z]', '', ocr_word.lower())
-    ocr_before_clean = [re.sub(r'[^a-zA-Z]', '', w.lower()) for w in ocr_context_before]
-    ocr_after_clean = [re.sub(r'[^a-zA-Z]', '', w.lower()) for w in ocr_context_after]
+    ocr_clean = re.sub(r"[^a-zA-Z']", '', ocr_word.lower())
+    ocr_before_clean = [re.sub(r"[^a-zA-Z']", '', w.lower()) for w in ocr_context_before]
+    ocr_after_clean = [re.sub(r"[^a-zA-Z']", '', w.lower()) for w in ocr_context_after]
     
     best_pos = -1
     best_score = 0
     
     for i, word in enumerate(clean_words):
-        word_clean = re.sub(r'[^a-zA-Z]', '', word.lower())
+        word_clean = re.sub(r"[^a-zA-Z']", '', word.lower())
         if word_clean != ocr_clean:
             continue
         
@@ -138,16 +163,20 @@ def correct_ocr_errors(full_text, clean_text, pages_data):
             ocr_corrections['|'] = 'I'
 
     for word_text in all_page_words:
-        word_clean = re.sub(r'[^a-zA-Z]', '', word_text.lower())
+        word_clean = re.sub(r"[^a-zA-Z']", '', word_text.lower())
         if not word_clean:
             continue
         
-        if word_clean in [re.sub(r'[^a-zA-Z]', '', w.lower()) for w in clean_words]:
+        if word_clean in [re.sub(r"[^a-zA-Z']", '', w.lower()) for w in clean_words]:
+            continue
+        
+        # Skip if OCR word is already a real word in dictionary
+        if is_real_word(word_clean):
             continue
         
         idx = None
         for i, pw in enumerate(all_page_words):
-            pw_clean = re.sub(r'[^a-zA-Z]', '', pw.lower())
+            pw_clean = re.sub(r"[^a-zA-Z']", '', pw.lower())
             if pw_clean == word_clean:
                 idx = i
                 break
@@ -167,7 +196,7 @@ def correct_ocr_errors(full_text, clean_text, pages_data):
                 continue
         
         for clean_word in clean_words:
-            clean_clean = re.sub(r'[^a-zA-Z]', '', clean_word.lower())
+            clean_clean = re.sub(r"[^a-zA-Z']", '', clean_word.lower())
             if clean_clean == word_clean:
                 continue
             
@@ -185,7 +214,7 @@ def correct_ocr_errors(full_text, clean_text, pages_data):
         corrected_words = []
         for word_data in page.get('words', []):
             word_text = word_data.get('text', '')
-            word_lower = re.sub(r'[^a-zA-Z]', '', word_text.lower())
+            word_lower = re.sub(r"[^a-zA-Z']", '', word_text.lower())
             if word_lower in ocr_corrections:
                 corrected_word = word_data.copy()
                 corrected_word['text'] = ocr_corrections[word_lower]
