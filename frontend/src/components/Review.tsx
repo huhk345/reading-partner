@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen } from 'lucide-react';
 import { VocabReview } from '../types';
@@ -149,8 +149,7 @@ export default function Review({ onBack }: ReviewProps) {
   const [loading, setLoading] = useState(true);
   const fetchedRef = useRef(false);
 
-  const fetchReviews = async () => {
-    if (fetchedRef.current && !loading) return; // Prevent extra calls but allow initial loading
+  const fetchReviews = useCallback(async () => {
     setLoading(true);
     try {
       // Changed to the new /all endpoint to see everything
@@ -161,13 +160,13 @@ export default function Review({ onBack }: ReviewProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchReviews();
     fetchedRef.current = true;
-  }, []);
+  }, [fetchReviews]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-24 gap-6">

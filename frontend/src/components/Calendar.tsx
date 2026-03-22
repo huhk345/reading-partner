@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ChevronLeft, ChevronRight, Flame, BookOpen, Type, GraduationCap } from 'lucide-react';
 import { ActivityDay, StreakInfo } from '../types';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Dialog } from './Dialog';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -17,34 +17,34 @@ export default function Calendar() {
   const [selectedDay, setSelectedDay] = useState<ActivityDay | null>(null);
   const lastFetchedRef = useRef<string>('');
 
-  const fetchActivity = useCallback(async () => {
-    try {
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth() + 1;
-      const res = await axios.get(`http://localhost:8000/api/activity?year=${year}&month=${month}`);
-      setActivityData(res.data);
-    } catch (err) {
-      console.error('Failed to fetch activity:', err);
-    }
-  }, [currentDate]);
-
-  const fetchStreak = useCallback(async () => {
-    try {
-      const res = await axios.get(`http://localhost:8000/api/activity/streak`);
-      setStreak(res.data);
-    } catch (err) {
-      console.error('Failed to fetch streak:', err);
-    }
-  }, []);
-
   useEffect(() => {
+    const fetchActivity = async () => {
+      try {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth() + 1;
+        const res = await axios.get(`http://localhost:8000/api/activity?year=${year}&month=${month}`);
+        setActivityData(res.data);
+      } catch (err) {
+        console.error('Failed to fetch activity:', err);
+      }
+    };
+
+    const fetchStreak = async () => {
+      try {
+        const res = await axios.get(`http://localhost:8000/api/activity/streak`);
+        setStreak(res.data);
+      } catch (err) {
+        console.error('Failed to fetch streak:', err);
+      }
+    };
+
     const key = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
     if (lastFetchedRef.current === key) return;
     
     fetchActivity();
     fetchStreak();
     lastFetchedRef.current = key;
-  }, [fetchActivity, fetchStreak, currentDate]);
+  }, [currentDate]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();

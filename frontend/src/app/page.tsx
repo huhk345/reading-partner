@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 const Reader = dynamic(() => import('@/components/Reader'), { ssr: false });
 import Review from '@/components/Review';
 import Calendar from '@/components/Calendar';
-import { ArrowLeft, GraduationCap, BookOpen, Star, Calendar as CalendarIcon, Trophy } from 'lucide-react';
+import { ArrowLeft, GraduationCap, BookOpen, Trophy } from 'lucide-react';
 
 export default function Home() {
   const [view, setView] = useState<'library' | 'reader' | 'review' | 'calendar'>('library');

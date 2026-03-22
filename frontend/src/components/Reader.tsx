@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
-import { ArrowLeft, Volume2, Plus, History, X, BookOpen, FileText, RefreshCw, Play, Pause } from 'lucide-react';
+import { Volume2, Plus, History, X, FileText, RefreshCw, Play } from 'lucide-react';
 import { Book, WordDefinition, PageData, Sentence, WordData } from '../types';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -13,9 +13,20 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogDescription, 
-  DialogContent, 
   DialogFooter 
 } from './Dialog';
+
+function fallbackSpeak(text: string, onComplete?: () => void) {
+  if (!window.speechSynthesis) {
+    onComplete?.();
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.8;
+  utterance.onend = () => onComplete?.();
+  window.speechSynthesis.speak(utterance);
+}
 
 function endsWithSentencePunctuation(text: string, abbreviations: string[]): boolean {
   if (!text) return false;
@@ -23,7 +34,6 @@ function endsWithSentencePunctuation(text: string, abbreviations: string[]): boo
   const abbreviationPattern = abbreviations.map(a => a.replace(/\./g, '\\.')).join('|');
   const protectedText = text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
   
-  const sentenceEndPattern = /[.!?…]["'"]?(?:\s+|$)/;
   const lastMatch = protectedText.match(/[.!?…]["'"]?(?:\s+|$)/g);
   
   if (!lastMatch) return false;
@@ -50,12 +60,11 @@ interface WordOverlayProps {
   renderedHeight: number;
   onWordClick: (word: string) => void;
   onSentencePlay: (sentenceText: string) => void;
-  pageIndex: number;
   sentences?: Sentence[];
   currentlyPlayingSentence: string | null;
 }
 
-function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, pageIndex, sentences, currentlyPlayingSentence }: WordOverlayProps) {
+function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, sentences, currentlyPlayingSentence }: WordOverlayProps) {
   const [hoveredSentence, setHoveredSentence] = useState<{
     text: string;
     backendSentenceText: string;
@@ -63,14 +72,10 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
   } | null>(null);
   const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
 
-  if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
-    return null;
-  }
-
-  const pointToPixel = renderedWidth / pageData.width;
-
   // Group words into sentences on this page based on punctuation
   const sentenceGroups = useMemo(() => {
+    if (!pageData || !pageData.words) return [];
+
     const groups: { text: string; words: WordData[], isValid: boolean, backendSentenceText: string }[] = [];
     let currentWords: WordData[] = [];
     
@@ -255,7 +260,24 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       }
     });
     return groups;
-  }, [pageData.words, sentences]);
+  }, [pageData, sentences]);
+
+  const activeSentenceWords = useMemo(() => {
+    if (hoveredSentence) {
+      return sentenceGroups.filter(g => g.backendSentenceText === hoveredSentence.backendSentenceText && g.isValid).flatMap(g => g.words);
+    }
+    if (currentlyPlayingSentence) {
+      const playingGroups = sentenceGroups.filter(g => g.backendSentenceText === currentlyPlayingSentence);
+      return playingGroups.flatMap(g => g.words);
+    }
+    return [];
+  }, [hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
+
+  if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
+    return null;
+  }
+
+  const pointToPixel = renderedWidth / pageData.width;
 
   const handleMouseEnter = (wordIdx: number) => {
     setHoveredWordIdx(wordIdx);
@@ -287,16 +309,6 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
   };
 
   const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.backendSentenceText;
-  const activeSentenceWords = useMemo(() => {
-    if (hoveredSentence) {
-      return sentenceGroups.filter(g => g.backendSentenceText === hoveredSentence.backendSentenceText && g.isValid).flatMap(g => g.words);
-    }
-    if (currentlyPlayingSentence) {
-      const playingGroups = sentenceGroups.filter(g => g.backendSentenceText === currentlyPlayingSentence);
-      return playingGroups.flatMap(g => g.words);
-    }
-    return [];
-  }, [hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
 
   return (
     <div 
@@ -471,10 +483,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [renderedPages, setRenderedPages] = useState<Record<number, { width: number, height: number }>>({});
   const [reparsing, setReparsing] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isReadingWord, setIsReadingWord] = useState(false);
   const [currentlyPlayingSentence, setCurrentlyPlayingSentence] = useState<string | null>(null);
-  const [hoveredWordPos, setHoveredWordPos] = useState<{x: number, y: number, sentenceId?: number, sentenceText?: string} | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -493,7 +503,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const lastFetchedBookId = useRef<number | null>(null);
 
-  const fetchBook = async () => {
+  const fetchBook = useCallback(async () => {
     try {
       const response = await axios.get(`http://localhost:8000/api/books/${bookId}`);
       setBook(response.data);
@@ -502,13 +512,13 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookId]);
 
   useEffect(() => {
     if (lastFetchedBookId.current === bookId) return;
     lastFetchedBookId.current = bookId;
     fetchBook();
-  }, [bookId]);
+  }, [bookId, fetchBook]);
 
   const handleReparse = async () => {
     setDialogConfig({
@@ -602,7 +612,36 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  const lookupWord = async (word: string, sentenceId?: number, skipLemma: boolean = false, forceRefresh: boolean = false) => {
+  const speak = useCallback(async (text: string, audioUrl?: string, onComplete?: () => void) => {
+    if (audioUrl) {
+      const audio = new Audio(audioUrl);
+      audio.play().catch(e => {
+        console.error("Error playing audio file, falling back to synthesis", e);
+        fallbackSpeak(text, onComplete);
+      });
+      audio.onended = () => onComplete?.();
+      return;
+    }
+    try {
+      const response = await axios.post('http://localhost:8000/api/tts', null, {
+        params: { text }
+      });
+      if (response.data.audio_url) {
+        const audio = new Audio(response.data.audio_url);
+        audio.play().catch(e => {
+          console.error("Error playing TTS audio, falling back to synthesis", e);
+          fallbackSpeak(text, onComplete);
+        });
+        audio.onended = () => onComplete?.();
+        return;
+      }
+    } catch (error) {
+      console.error("Error fetching TTS audio, falling back to synthesis", error);
+    }
+    fallbackSpeak(text, onComplete);
+  }, []);
+
+  const lookupWord = useCallback(async (word: string, sentenceId?: number, skipLemma: boolean = false, forceRefresh: boolean = false) => {
     const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
@@ -629,7 +668,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     } finally {
       setIsLoadingWord(false);
     }
-  };
+  }, [bookId, speak]);
 
   // Debounced lookup when inputWord changes (only for manual typing, not for tag clicks)
   useEffect(() => {
@@ -643,7 +682,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }, 600);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [inputWord, isDialogOpen, lastSentenceId, activeWord]);
+  }, [inputWord, isDialogOpen, lastSentenceId, activeWord, selectedWord, lookupWord]);
 
   const handleWordClick = async (word: string, sentenceId?: number) => {
     // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
@@ -674,103 +713,11 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     await lookupWord(lemmaWord, lastSentenceId, true);
   };
 
-  const handlePdfClick = (e: React.MouseEvent) => {
-    // Standardize getting the range from point
-    let range: Range | null = null;
-    if (typeof document.caretRangeFromPoint === 'function') {
-      range = document.caretRangeFromPoint(e.clientX, e.clientY);
-    } else if (document.caretPositionFromPoint) {
-      const position = document.caretPositionFromPoint(e.clientX, e.clientY);
-      if (position) {
-        range = document.createRange();
-        range.setStart(position.offsetNode, position.offset);
-        range.collapse(true);
-      }
-    }
-
-    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-      const textNode = range.startContainer;
-      const text = textNode.textContent || '';
-      const offset = range.startOffset;
-
-      // Expand to find the word boundaries
-      // Match alphanumeric characters and apostrophes
-      let start = offset;
-      while (start > 0 && /[\w']/.test(text[start - 1])) {
-        start--;
-      }
-      let end = offset;
-      while (end < text.length && /[\w']/.test(text[end])) {
-        end++;
-      }
-
-      const clickedWord = text.slice(start, end).trim();
-      if (clickedWord) {
-        handleWordClick(clickedWord);
-      }
-    }
-  };
-
-  const speak = async (text: string, audioUrl?: string, onComplete?: () => void) => {
-    if (audioUrl) {
-      const audio = new Audio(audioUrl);
-      audio.play().catch(e => {
-        console.error("Error playing audio file, falling back to synthesis", e);
-        fallbackSpeak(text, onComplete);
-      });
-      audio.onended = () => onComplete?.();
-      return;
-    }
-    try {
-      const response = await axios.post('http://localhost:8000/api/tts', null, {
-        params: { text }
-      });
-      if (response.data.audio_url) {
-        const audio = new Audio(response.data.audio_url);
-        audio.play().catch(e => {
-          console.error("Error playing TTS audio, falling back to synthesis", e);
-          fallbackSpeak(text, onComplete);
-        });
-        audio.onended = () => onComplete?.();
-        return;
-      }
-    } catch (error) {
-      console.error("Error fetching TTS audio, falling back to synthesis", error);
-    }
-    fallbackSpeak(text, onComplete);
-  };
-
-  const findSentenceContainingWord = (word: string): Sentence | null => {
-    if (!book?.sentences) return null;
-    const cleanWord = word.replace(/[^\w']/g, '').toLowerCase();
-    for (const sentence of book.sentences) {
-      const cleanSentence = sentence.text.replace(/[^\w']/g, '').toLowerCase();
-      if (cleanSentence.includes(cleanWord)) {
-        return sentence;
-      }
-    }
-    return null;
-  };
-
   const handleSentencePlay = async (sentenceText: string) => {
-    setIsSpeaking(true);
     setCurrentlyPlayingSentence(sentenceText);
     await speak(sentenceText, undefined, () => {
-      setIsSpeaking(false);
       setCurrentlyPlayingSentence(null);
     });
-  };
-
-  const fallbackSpeak = (text: string, onComplete?: () => void) => {
-    if (!window.speechSynthesis) {
-      onComplete?.();
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.8;
-    utterance.onend = () => onComplete?.();
-    window.speechSynthesis.speak(utterance);
   };
 
   const addToVocab = async () => {
@@ -876,7 +823,6 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                             renderedHeight={renderedPages[index].height}
                             onWordClick={handleWordClick}
                             onSentencePlay={handleSentencePlay}
-                            pageIndex={index}
                             sentences={book.sentences}
                             currentlyPlayingSentence={currentlyPlayingSentence}
                         />

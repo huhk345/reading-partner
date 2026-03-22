@@ -23,6 +23,7 @@ class TTSEngine:
     def _get_tts(self):
         if self._tts is None:
             from TTS.api import TTS
+            print(TTS().list_models())
             print(f"Loading TTS model: {self._model_name}...")
             self._tts = TTS(model_name=self._model_name, gpu=False)
 
