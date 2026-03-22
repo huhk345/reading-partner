@@ -57,9 +57,20 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       normalized: s.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
     }));
     
+    const abbreviations = [
+      'Mrs.', 'Mr.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.',
+      'St.', 'Ave.', 'Blvd.', 'Rd.',
+      'etc.', 'vs.', 'Inc.', 'Ltd.', 'Corp.',
+      'vol.', 'ch.', 'fig.', 'approx.',
+      'A.M.', 'P.M.', 'a.m.', 'p.m.',
+      'U.S.', 'U.K.', 'E.U.',
+    ];
+
     pageData.words.forEach((word, idx) => {
       currentWords.push(word);
-      const endsWithPunctuation = /[.!?]$/.test(word.text.replace(/\s+$/, ''));
+      const trimmedText = word.text.replace(/\s+$/, '');
+      const isAbbreviation = abbreviations.includes(trimmedText);
+      const endsWithPunctuation = /[.!?…][”"']?$/.test(trimmedText) && !isAbbreviation;
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
         let processing = true;
         while (processing && currentWords.length > 0) {
@@ -305,7 +316,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         }
 
         const [x0, y0, x1, y1] = word.bbox;
-        const hoverText = word.text.replace(/[^\w\s'’]|_/g, "").trim();
+        const hoverText = word.text.replace(/[^\w\s'’\-]|_/g, "").trim();
 
         return (
           <div
