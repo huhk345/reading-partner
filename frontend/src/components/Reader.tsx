@@ -17,6 +17,27 @@ import {
   DialogFooter 
 } from './Dialog';
 
+function endsWithSentencePunctuation(text: string, abbreviations: string[]): boolean {
+  if (!text) return false;
+  
+  const abbreviationPattern = abbreviations.map(a => a.replace(/\./g, '\\.')).join('|');
+  const protectedText = text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
+  
+  const sentenceEndPattern = /[.!?…]["'"]?(?:\s+|$)/;
+  const lastMatch = protectedText.match(/[.!?…]["'"]?(?:\s+|$)/g);
+  
+  if (!lastMatch) return false;
+  
+  const lastEnding = lastMatch[lastMatch.length - 1];
+  const endingIndex = protectedText.lastIndexOf(lastEnding);
+  const afterEnding = protectedText.slice(endingIndex + lastEnding.length).trim();
+  
+  if (afterEnding.length === 0) return true;
+  if (/^[A-Z]/.test(afterEnding)) return true;
+  
+  return false;
+}
+
 // Set up worker for react-pdf
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -40,6 +61,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     backendSentenceText: string;
     bbox: { top: number; left: number; right: number; bottom: number };
   } | null>(null);
+  const [hoveredWordIdx, setHoveredWordIdx] = useState<number | null>(null);
 
   if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
     return null;
@@ -54,7 +76,8 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     
     const normalizedSentences = (sentences || []).map((s: Sentence) => ({
       text: s.text,
-      normalized: s.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+      normalized: s.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(),
+      tokens: s.text.match(/[a-zA-Z0-9]+/g)?.map(t => t.toLowerCase()) || []
     }));
     
     const abbreviations = [
@@ -69,8 +92,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     pageData.words.forEach((word, idx) => {
       currentWords.push(word);
       const trimmedText = word.text.replace(/\s+$/, '');
-      const isAbbreviation = abbreviations.includes(trimmedText);
-      const endsWithPunctuation = /[.!?…][”"']?$/.test(trimmedText) && !isAbbreviation;
+      const endsWithPunctuation = endsWithSentencePunctuation(trimmedText, abbreviations);
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
         let processing = true;
         while (processing && currentWords.length > 0) {
@@ -156,6 +178,69 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
           }
 
           if (!matched) {
+             // Try Sequence Match Logic
+             const currentWordsTokens = currentWords.map(w => w.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
+             
+             // Optimization: Scan sentences for sequence match
+             for (const sent of normalizedSentences) {
+                 if (sent.tokens.length === 0) continue;
+                 
+                 let wIdx = 0;
+                 let sIdx = 0;
+                 const matchIndices: number[] = [];
+                 
+                 while (wIdx < currentWordsTokens.length && sIdx < sent.tokens.length) {
+                     if (currentWordsTokens[wIdx] === sent.tokens[sIdx]) {
+                         matchIndices.push(wIdx);
+                         sIdx++;
+                     }
+                     wIdx++;
+                 }
+                 
+                 if (sIdx === sent.tokens.length) {
+                      // Found a sequence match!
+                      // Partition currentWords into Valid/Invalid blocks
+                      let currentBlock: WordData[] = [];
+                      let isBlockValid = matchIndices.includes(0); // Start state
+                      
+                      for (let i = 0; i < currentWords.length; i++) {
+                          const isMatch = matchIndices.includes(i);
+                          
+                          if (isMatch !== isBlockValid) {
+                              // Push old block
+                              if (currentBlock.length > 0) {
+                                  groups.push({
+                                      text: currentBlock.map(w => w.text).join(' '),
+                                      words: currentBlock,
+                                      isValid: isBlockValid,
+                                      backendSentenceText: isBlockValid ? sent.text : currentBlock.map(w => w.text).join(' ')
+                                  });
+                              }
+                              // Start new block
+                              currentBlock = [currentWords[i]];
+                              isBlockValid = isMatch;
+                          } else {
+                              currentBlock.push(currentWords[i]);
+                          }
+                      }
+                      // Push last block
+                      if (currentBlock.length > 0) {
+                          groups.push({
+                              text: currentBlock.map(w => w.text).join(' '),
+                              words: currentBlock,
+                              isValid: isBlockValid,
+                              backendSentenceText: isBlockValid ? sent.text : currentBlock.map(w => w.text).join(' ')
+                          });
+                      }
+                      
+                      matched = true;
+                      currentWords = []; // Consumed all
+                      break; // Stop checking other sentences
+                 }
+             }
+          }
+
+          if (!matched) {
               // No match found, group everything as one (invalid/unknown)
               groups.push({
                 text,
@@ -173,6 +258,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
   }, [pageData.words, sentences]);
 
   const handleMouseEnter = (wordIdx: number) => {
+    setHoveredWordIdx(wordIdx);
     // Find which group this word belongs to
     let currentCount = 0;
     const group = sentenceGroups.find(g => {
@@ -203,7 +289,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
   const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.backendSentenceText;
   const activeSentenceWords = useMemo(() => {
     if (hoveredSentence) {
-      return sentenceGroups.find(g => g.text === hoveredSentence.text)?.words || [];
+      return sentenceGroups.filter(g => g.backendSentenceText === hoveredSentence.backendSentenceText && g.isValid).flatMap(g => g.words);
     }
     if (currentlyPlayingSentence) {
       const playingGroups = sentenceGroups.filter(g => g.backendSentenceText === currentlyPlayingSentence);
@@ -219,7 +305,10 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         width: renderedWidth, 
         height: renderedHeight 
       }}
-      onMouseLeave={() => setHoveredSentence(null)}
+      onMouseLeave={() => {
+        setHoveredSentence(null);
+        setHoveredWordIdx(null);
+      }}
     >
       {/* Sentence Highlight */}
       <AnimatePresence>
@@ -248,7 +337,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                     className={`absolute rounded transition-colors duration-300 ${
                       currentlyPlayingSentence === (hoveredSentence?.backendSentenceText || currentlyPlayingSentence)
                         ? 'bg-green-500/20'
-                        : 'bg-indigo-500/10'
+                        : 'bg-green-500/10'
                     }`}
                     style={{
                       left: `${left}px`,
@@ -284,7 +373,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                 else if (currentlyPlayingSentence) onSentencePlay(currentlyPlayingSentence);
               }}
               className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 group/btn border border-white/20 backdrop-blur-sm ${
-                isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-green-600 hover:bg-green-700'
               }`}
             >
               {isPlaying ? (
@@ -318,15 +407,29 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         const [x0, y0, x1, y1] = word.bbox;
         const hoverText = word.text.replace(/[^\w\s'’\-]|_/g, "").trim();
 
+        let styleTop = y0 * pointToPixel;
+        let styleHeight = (y1 - y0) * pointToPixel;
+
+        // If this word is hovered AND belongs to the active sentence
+        if (hoveredSentence && idx === hoveredWordIdx && activeSentenceWords.some(w => w === word)) {
+          const lineWords = activeSentenceWords.filter(w => w.line === word.line);
+          if (lineWords.length > 0) {
+            const minTop = Math.min(...lineWords.map(w => w.bbox[1] * pointToPixel)) - 3;
+            const maxBottom = Math.max(...lineWords.map(w => w.bbox[3] * pointToPixel)) + 3;
+            styleTop = minTop;
+            styleHeight = maxBottom - minTop;
+          }
+        }
+
         return (
           <div
             key={`${word.text}-${idx}`}
-            className="absolute cursor-pointer pointer-events-auto bg-transparent hover:bg-indigo-500/10 rounded-sm transition-all duration-75 group"
+            className="absolute cursor-pointer pointer-events-auto bg-transparent hover:bg-green-500/20 rounded-sm transition-all duration-75 group"
             style={{
               left: `${x0 * pointToPixel}px`,
-              top: `${y0 * pointToPixel}px`,
+              top: `${styleTop}px`,
               width: `${(x1 - x0) * pointToPixel}px`,
-              height: `${(y1 - y0) * pointToPixel}px`,
+              height: `${styleHeight}px`,
             }}
             onMouseEnter={() => handleMouseEnter(idx)}
             onClick={(e) => {
@@ -334,7 +437,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
               onWordClick(word.text);
             }}
           >
-            <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
+            <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
                 {hoverText}
             </div>
           </div>
