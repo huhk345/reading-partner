@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import { api } from '../lib/api';
 import { ChevronLeft, ChevronRight, Flame, BookOpen, Type, GraduationCap } from 'lucide-react';
 import { ActivityDay, StreakInfo } from '../types';
 import { motion } from 'framer-motion';
@@ -22,7 +22,7 @@ export default function Calendar() {
       try {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth() + 1;
-        const res = await axios.get(`http://localhost:8000/api/activity?year=${year}&month=${month}`);
+        const res = await api.get(`/api/activity?year=${year}&month=${month}`);
         setActivityData(res.data);
       } catch (err) {
         console.error('Failed to fetch activity:', err);
@@ -31,7 +31,7 @@ export default function Calendar() {
 
     const fetchStreak = async () => {
       try {
-        const res = await axios.get(`http://localhost:8000/api/activity/streak`);
+        const res = await api.get('/api/activity/streak');
         setStreak(res.data);
       } catch (err) {
         console.error('Failed to fetch streak:', err);

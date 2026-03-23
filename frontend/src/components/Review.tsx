@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
+import { api } from '../lib/api';
 import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -153,7 +153,7 @@ export default function Review({ onBack }: ReviewProps) {
     setLoading(true);
     try {
       // Changed to the new /all endpoint to see everything
-      const response = await axios.get('http://localhost:8000/api/vocab/all');
+      const response = await api.get('/api/vocab/all');
       setReviews(response.data);
     } catch (error) {
       console.error('Error fetching reviews:', error);

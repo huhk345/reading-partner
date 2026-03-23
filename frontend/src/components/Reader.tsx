@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
+import { api } from '../lib/api';
 import { Volume2, Plus, History, X, FileText, RefreshCw, Play } from 'lucide-react';
 import { Book, WordDefinition, PageData, Sentence, WordData } from '../types';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -550,7 +550,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const fetchBook = useCallback(async () => {
     try {
-      const response = await axios.get(`http://localhost:8000/api/books/${bookId}`);
+      const response = await api.get(`/api/books/${bookId}`);
       setBook(response.data);
     } catch (error) {
       console.error('Error fetching book:', error);
@@ -574,7 +574,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
       onConfirm: async () => {
         setReparsing(true);
         try {
-          await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
+          await api.post(`/api/books/${bookId}/reparse`);
           onBack();
         } catch (error) {
           console.error('Error reparsing book:', error);
@@ -668,7 +668,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
       return;
     }
     try {
-      const response = await axios.post('http://localhost:8000/api/tts', null, {
+      const response = await api.post('/api/tts', null, {
         params: { text }
       });
       if (response.data.audio_url) {
@@ -692,7 +692,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
     setIsLoadingWord(true);
     try {
-      const response = await axios.get(`http://localhost:8000/api/dict`, {
+      const response = await api.get('/api/dict', {
         params: { 
           word: cleanWord,
           book_id: bookId,
@@ -773,7 +773,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const addToVocab = async () => {
     if (!selectedWord || !selectedWord.id) return;
     try {
-      await axios.post('http://localhost:8000/api/vocab', null, {
+      await api.post('/api/vocab', null, {
         params: { word_id: selectedWord.id }
       });
       // Close the word dialog (REQ-002: no confirmation dialog)

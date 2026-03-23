@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import { api, apiUrl } from '../lib/api';
 import { Book as BookIcon, Plus, RefreshCw } from 'lucide-react';
 import { Book } from '../types';
 import { 
@@ -35,7 +35,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     try {
-      const response = await axios.get('http://localhost:8000/api/books');
+      const response = await api.get('/api/books');
       setBooks(response.data);
     } catch (error) {
       console.error('Error fetching books:', error);
@@ -71,7 +71,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
     formData.append('file', file);
 
     try {
-      await axios.post('http://localhost:8000/api/upload', formData);
+      await api.post('/api/upload', formData);
       fetchBooks();
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -88,7 +88,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
   const handleReparse = async (bookId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await axios.post(`http://localhost:8000/api/books/${bookId}/reparse`);
+      await api.post(`/api/books/${bookId}/reparse`);
       fetchBooks();
     } catch (error) {
       console.error('Error reparsing book:', error);
@@ -139,7 +139,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
                   className="absolute inset-0 z-0 opacity-0 group-hover:opacity-20 transition-opacity duration-700"
                   style={{
                     background: book.cover_image 
-                      ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)}) center/cover`
+                      ? `url(${apiUrl(`/uploads/${encodeURIComponent(book.cover_image)}`)}) center/cover`
                       : 'linear-gradient(to bottom right, #22c55e, #0ea5e9)',
                     filter: 'blur(20px)',
                   }}
@@ -154,7 +154,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
                     <div 
                       className="book-cover-3d flex items-center justify-center overflow-hidden bg-slate-100 relative"
                       style={{
-                        backgroundImage: book.cover_image ? `url(http://localhost:8000/uploads/${encodeURIComponent(book.cover_image)})` : undefined,
+                        backgroundImage: book.cover_image ? `url(${apiUrl(`/uploads/${encodeURIComponent(book.cover_image)}`)})` : undefined,
                       }}
                     >
                       {isFailed && (
