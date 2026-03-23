@@ -273,6 +273,54 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     return [];
   }, [hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
 
+  const activeSentenceVisualLines = useMemo(() => {
+    if (activeSentenceWords.length === 0) return [];
+
+    // Use projection profile to group words into lines visually
+    // 1. Find unique Y coordinates
+    const uniqueYs = Array.from(new Set(activeSentenceWords.flatMap(w => [w.bbox[1], w.bbox[3]])))
+      .sort((a, b) => a - b);
+    
+    const lineRegions: { top: number; bottom: number }[] = [];
+    let currentRegion: { top: number; bottom: number } | null = null;
+
+    // 2. Identify vertical regions that have text (intervals)
+    for (let i = 0; i < uniqueYs.length - 1; i++) {
+      const y1 = uniqueYs[i];
+      const y2 = uniqueYs[i + 1];
+      const mid = (y1 + y2) / 2;
+      
+      // Check if any word vertically overlaps this slice
+      const hasWord = activeSentenceWords.some(w => w.bbox[1] <= mid && w.bbox[3] >= mid);
+
+      if (hasWord) {
+        if (!currentRegion) {
+          currentRegion = { top: y1, bottom: y2 };
+        } else {
+          // Extend current region
+          currentRegion.bottom = y2;
+        }
+      } else {
+        // Gap found
+        if (currentRegion) {
+          lineRegions.push(currentRegion);
+          currentRegion = null;
+        }
+      }
+    }
+    if (currentRegion) {
+      lineRegions.push(currentRegion);
+    }
+
+    // 3. Map words to regions
+    return lineRegions.map(region => 
+      activeSentenceWords.filter(w => 
+        // A word belongs to a region if it overlaps with it
+        Math.max(w.bbox[1], region.top) < Math.min(w.bbox[3], region.bottom)
+      )
+    ).filter(words => words.length > 0);
+  }, [activeSentenceWords]);
+
   if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
     return null;
   }
@@ -281,6 +329,8 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
   const handleMouseEnter = (wordIdx: number) => {
     setHoveredWordIdx(wordIdx);
+    // Suppress hover if a sentence is currently playing
+    if (currentlyPlayingSentence) return;
     // Find which group this word belongs to
     let currentCount = 0;
     const group = sentenceGroups.find(g => {
@@ -318,7 +368,10 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         height: renderedHeight 
       }}
       onMouseLeave={() => {
-        setHoveredSentence(null);
+        // Don't clear hover state if a sentence is currently playing
+        if (!currentlyPlayingSentence) {
+          setHoveredSentence(null);
+        }
         setHoveredWordIdx(null);
       }}
     >
@@ -331,14 +384,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
             exit={{ opacity: 0 }}
             className="absolute pointer-events-none"
           >
-            {(() => {
-              const lines = new Map<number, typeof activeSentenceWords>();
-              activeSentenceWords.forEach(w => {
-                const existing = lines.get(w.line) || [];
-                existing.push(w);
-                lines.set(w.line, existing);
-              });
-              return Array.from(lines.values()).map((lineWords, i) => {
+            {activeSentenceVisualLines.map((lineWords, i) => {
                 const left = Math.min(...lineWords.map(w => w.bbox[0] * pointToPixel)) - 4;
                 const top = Math.min(...lineWords.map(w => w.bbox[1] * pointToPixel)) - 3;
                 const right = Math.max(...lineWords.map(w => w.bbox[2] * pointToPixel)) + 4;
@@ -359,8 +405,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                     }}
                   />
                 );
-              });
-            })()}
+              })}
           </motion.div>
         )}
       </AnimatePresence>
@@ -424,8 +469,8 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
         // If this word is hovered AND belongs to the active sentence
         if (hoveredSentence && idx === hoveredWordIdx && activeSentenceWords.some(w => w === word)) {
-          const lineWords = activeSentenceWords.filter(w => w.line === word.line);
-          if (lineWords.length > 0) {
+          const lineWords = activeSentenceVisualLines.find(line => line.includes(word));
+          if (lineWords && lineWords.length > 0) {
             const minTop = Math.min(...lineWords.map(w => w.bbox[1] * pointToPixel)) - 3;
             const maxBottom = Math.max(...lineWords.map(w => w.bbox[3] * pointToPixel)) + 3;
             styleTop = minTop;
@@ -715,9 +760,14 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const handleSentencePlay = async (sentenceText: string) => {
     setCurrentlyPlayingSentence(sentenceText);
-    await speak(sentenceText, undefined, () => {
+    try {
+      await speak(sentenceText, undefined, () => {
+        setCurrentlyPlayingSentence(null);
+      });
+    } catch (error) {
+      console.error("Error playing sentence:", error);
       setCurrentlyPlayingSentence(null);
-    });
+    }
   };
 
   const addToVocab = async () => {
@@ -854,7 +904,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                 const isPlaying = currentlyPlayingSentence === sentence.text;
                 return (
                   <span key={sentence.id} className={`group/sentence rounded px-2 py-1 -mx-2 transition-colors relative inline-block ${
-                    isPlaying ? 'bg-green-50' : 'hover:bg-indigo-50/50'
+                    isPlaying ? 'bg-green-50' : currentlyPlayingSentence ? '' : 'hover:bg-indigo-50/50'
                   }`}>
                     {sentence.text.split(/\s+/).map((word, wIdx) => {
                       // Only show words that contain at least one alphabet character
@@ -879,7 +929,11 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       );
                     })}
                     <div className={`absolute -top-12 left-0 pt-6 pointer-events-auto z-10 transition-all duration-300 ${
-                      isPlaying ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 group-hover/sentence:opacity-100 group-hover/sentence:translate-y-0'
+                      isPlaying
+                        ? 'opacity-100 translate-y-0'
+                        : currentlyPlayingSentence
+                          ? 'opacity-0 pointer-events-none'
+                          : 'opacity-0 translate-y-2 group-hover/sentence:opacity-100 group-hover/sentence:translate-y-0'
                     }`}>
                       <button 
                         onClick={() => handleSentencePlay(sentence.text)}

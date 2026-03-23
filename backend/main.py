@@ -440,9 +440,9 @@ def submit_review(vocab_id: int, quality: int, db: Session = Depends(get_db)):
     return {"next_review": next_review}
 
 @app.post("/api/tts")
-def generate_tts(text: str, speaker: str = "p225"):
+def generate_tts(text: str, prompt_wav_path: Optional[str] = None, prompt_text: Optional[str] = None):
     try:
-        audio_path = tts_engine.synthesize(text, speaker=speaker)
+        audio_path = tts_engine.synthesize(text, prompt_wav_path=prompt_wav_path, prompt_text=prompt_text)
         audio_filename = os.path.basename(audio_path)
         return {"audio_url": f"http://localhost:8000/tts/{audio_filename}"}
     except Exception as e:

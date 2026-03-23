@@ -9,5 +9,6 @@ pytesseract
 Pillow
 ebooklib
 beautifulsoup4
-TTS
+voxcpm
+soundfile
 spacy
