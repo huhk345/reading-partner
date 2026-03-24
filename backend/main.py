@@ -446,6 +446,7 @@ def generate_tts(text: str, prompt_wav_path: Optional[str] = None, prompt_text: 
         audio_filename = os.path.basename(audio_path)
         return {"audio_url": f"http://localhost:8000/tts/{audio_filename}"}
     except Exception as e:
+        logger.exception(f"TTS generation failed for text: {text[:100]}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 @app.get("/api/activity")

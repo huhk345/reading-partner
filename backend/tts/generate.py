@@ -14,6 +14,9 @@ class TTSEngine:
     # VoxCPM inference parameters
     _cfg_value = 2.0
     _inference_timesteps = 10
+    _speed_ratio = 0.9
+    _fixed_prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "Sulafat.wav")
+    _fixed_prompt_text = "What idea do you want to bring to life?"
 
     def __new__(cls):
         if cls._instance is None:
@@ -22,10 +25,81 @@ class TTSEngine:
 
     def _get_model(self):
         if self._model is None:
+            import torch
             from voxcpm import VoxCPM
+            from voxcpm.modules.minicpm4.model import MiniCPMAttention, apply_rotary_pos_emb
+
+            # Monkey-patch MiniCPMAttention.forward_step to fix SDPA mask shape issue on CPU
+            def patched_forward_step(
+                self_attn,
+                hidden_states: torch.Tensor,
+                position_emb: tuple[torch.Tensor, torch.Tensor],
+                position_id: int,
+                kv_cache: tuple[torch.Tensor, torch.Tensor],
+            ) -> torch.Tensor:
+                bsz, _ = hidden_states.size()
+
+                query_states = self_attn.q_proj(hidden_states)
+                key_states = self_attn.k_proj(hidden_states)
+                value_states = self_attn.v_proj(hidden_states)
+
+                query_states = query_states.view(bsz, 1, self_attn.num_heads, self_attn.head_dim).transpose(1, 2)
+                key_states = key_states.view(bsz, 1, self_attn.num_key_value_heads, self_attn.head_dim).transpose(1, 2)
+                value_states = value_states.view(bsz, 1, self_attn.num_key_value_heads, self_attn.head_dim).transpose(1, 2)
+
+                cos, sin = position_emb
+
+                query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+                key_cache, value_cache = kv_cache
+
+                key_cache[:, :, position_id, :] = key_states
+                value_cache[:, :, position_id, :] = value_states
+
+                attn_mask = torch.arange(key_cache.size(2), device=key_cache.device) <= position_id
+                # Fix: Ensure broadcastable mask shape: (1, 1, 1, L)
+                attn_mask = attn_mask.view(1, 1, 1, -1)
+
+                # ref: https://github.com/pytorch/pytorch/issues/163597
+                # there is a bug in MPS for non-contiguous tensors, so we need to make them contiguous
+                query_states = query_states.contiguous()
+                key_cache = key_cache.contiguous()
+                value_cache = value_cache.contiguous()
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    query_states,
+                    key_cache,
+                    value_cache,
+                    attn_mask=attn_mask,
+                    enable_gqa=True,
+                )
+
+                attn_output = attn_output.transpose(1, 2).contiguous()
+                attn_output = attn_output.reshape(bsz, self_attn.num_heads * self_attn.head_dim)
+                attn_output = self_attn.o_proj(attn_output)
+
+                return attn_output
+
+            # Apply the patch
+            MiniCPMAttention.forward_step = patched_forward_step
+            print("Patched MiniCPMAttention.forward_step for CPU/MPS compatibility.")
+
             print(f"Loading VoxCPM model: {self._model_id}...")
             self._model = VoxCPM.from_pretrained(self._model_id)
-            print("VoxCPM model loaded successfully!")
+            # Explicitly move to CPU and float32, and update internal attributes
+            # to avoid device/type mismatch in voxcpm's internal methods
+            self._model.tts_model.to("cpu").to(torch.float32)
+            self._model.tts_model.device = "cpu"
+            if hasattr(self._model.tts_model, "config"):
+                self._model.tts_model.config.dtype = "float32"
+                
+                # Re-setup cache on CPU for the internal language models to ensure KV cache is on CPU
+                max_length = getattr(self._model.tts_model.config, "max_length", 4096)
+                if hasattr(self._model.tts_model, "base_lm"):
+                    self._model.tts_model.base_lm.setup_cache(1, max_length, "cpu", torch.float32)
+                if hasattr(self._model.tts_model, "residual_lm"):
+                    self._model.tts_model.residual_lm.setup_cache(1, max_length, "cpu", torch.float32)
+            
+            print("VoxCPM model loaded on CPU with float32!")
         return self._model
 
     @staticmethod
@@ -52,6 +126,14 @@ class TTSEngine:
     ) -> str:
         os.makedirs(output_dir, exist_ok=True)
 
+        # Use fixed prompt if not provided
+        if prompt_wav_path is None:
+            # Check absolute path or relative to cwd
+            if os.path.exists(self._fixed_prompt_path):
+                prompt_wav_path = self._fixed_prompt_path
+                if prompt_text is None:
+                    prompt_text = self._fixed_prompt_text
+
         text_hash = hashlib.md5(text.encode()).hexdigest()
         output_path = os.path.join(output_dir, f"{text_hash}.wav")
 
@@ -74,7 +156,10 @@ class TTSEngine:
             retry_badcase_ratio_threshold=6.0,
         )
 
-        sf.write(output_path, wav, model.tts_model.sample_rate)
+        # Save with adjusted sample rate to control speed
+        # Lower sample rate = slower playback (and lower pitch)
+        target_sr = int(model.tts_model.sample_rate * self._speed_ratio)
+        sf.write(output_path, wav, target_sr)
         return output_path
 
 
