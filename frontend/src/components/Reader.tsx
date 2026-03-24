@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
-import { Volume2, Plus, History, X, FileText, RefreshCw, Play } from 'lucide-react';
+import { Volume2, Plus, History, X, FileText, RefreshCw, Play, Check } from 'lucide-react';
 import { Book, WordDefinition, PageData, Sentence, WordData } from '../types';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -46,6 +46,33 @@ function endsWithSentencePunctuation(text: string, abbreviations: string[]): boo
   if (/^[A-Z]/.test(afterEnding)) return true;
   
   return false;
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
 }
 
 // Set up worker for react-pdf
@@ -107,12 +134,22 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
           let matched = false;
           
           if (normalizedText.length > 0) {
-              const match = normalizedSentences.find((s: { text: string; normalized: string }) => {
+              let match = normalizedSentences.find((s: { text: string; normalized: string }) => {
                   if (normalizedText.length <= 5) {
                       return s.normalized === normalizedText;
                   }
                   return s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
               });
+
+              if (!match && normalizedText.length > 5) {
+                  // Fuzzy match for sentences that are almost identical
+                  match = normalizedSentences.find((s: { text: string; normalized: string }) => {
+                      if (Math.abs(s.normalized.length - normalizedText.length) > 2) return false;
+                      const dist = levenshteinDistance(s.normalized, normalizedText);
+                      // Allow 1 char difference for short strings, 2 for longer
+                      return dist <= (normalizedText.length > 10 ? 2 : 1);
+                  });
+              }
 
               if (match) {
                   // Check if we have a superset (we have more text than the match)
@@ -328,9 +365,10 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
   const pointToPixel = renderedWidth / pageData.width;
 
   const handleMouseEnter = (wordIdx: number) => {
-    setHoveredWordIdx(wordIdx);
     // Suppress hover if a sentence is currently playing
     if (currentlyPlayingSentence) return;
+
+    setHoveredWordIdx(wordIdx);
     // Find which group this word belongs to
     let currentCount = 0;
     const group = sentenceGroups.find(g => {
@@ -341,8 +379,6 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     });
 
     if (group && group.isValid) {
-      console.log('[Hover] Backend sentence:', group.backendSentenceText);
-
       const top = Math.min(...group.words.map(w => w.bbox[1] * pointToPixel));
       const left = Math.min(...group.words.map(w => w.bbox[0] * pointToPixel));
       const right = Math.max(...group.words.map(w => w.bbox[2] * pointToPixel));
@@ -360,6 +396,36 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
   const isPlaying = hoveredSentence && currentlyPlayingSentence === hoveredSentence.backendSentenceText;
 
+  const buttonPosition = useMemo(() => {
+    const gap = -60;
+    let top = 0;
+    let left = 0;
+
+    if (hoveredWordIdx !== null && pageData.words[hoveredWordIdx]) {
+      const word = pageData.words[hoveredWordIdx];
+      const line = activeSentenceVisualLines.find(l => l.includes(word));
+      if (line && line.length > 0) {
+        top = Math.min(...line.map(w => w.bbox[1] * pointToPixel)) + gap;
+      } else {
+        top = word.bbox[1] * pointToPixel + gap;
+      }
+      left = (word.bbox[0] + word.bbox[2]) / 2 * pointToPixel;
+    } else if (hoveredSentence) {
+      top = hoveredSentence.bbox.top + gap;
+      left = (hoveredSentence.bbox.left + hoveredSentence.bbox.right) / 2;
+    } else if (currentlyPlayingSentence) {
+      const playingGroup = sentenceGroups.find(g => g.backendSentenceText === currentlyPlayingSentence);
+      if (playingGroup && playingGroup.words.length > 0) {
+        top = Math.min(...playingGroup.words.map(w => w.bbox[1] * pointToPixel)) + gap;
+        const minLeft = Math.min(...playingGroup.words.map(w => w.bbox[0] * pointToPixel));
+        const maxRight = Math.max(...playingGroup.words.map(w => w.bbox[2] * pointToPixel));
+        left = (minLeft + maxRight) / 2;
+      }
+    }
+
+    return { top: `${top}px`, left: `${left}px` };
+  }, [hoveredWordIdx, pageData.words, activeSentenceVisualLines, pointToPixel, hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
+
   return (
     <div 
       className="absolute top-0 left-0 z-40 pointer-events-none overflow-hidden"
@@ -371,8 +437,8 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         // Don't clear hover state if a sentence is currently playing
         if (!currentlyPlayingSentence) {
           setHoveredSentence(null);
+          setHoveredWordIdx(null);
         }
-        setHoveredWordIdx(null);
       }}
     >
       {/* Sentence Highlight */}
@@ -414,18 +480,26 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       <AnimatePresence>
         {(hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.backendSentenceText === currentlyPlayingSentence))) && (
           <motion.div
-            initial={{ opacity: 0, y: 5, x: 0 }}
-            animate={{ opacity: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, y: 5, x: 0 }}
-            className="pointer-events-auto absolute z-[80] pt-6" // pt-6 creates a hover 'bridge'
-            style={{
-              top: `${(hoveredSentence?.bbox.top || Math.min(...(sentenceGroups.find(g => g.backendSentenceText === currentlyPlayingSentence)?.words.map(w => w.bbox[1] * pointToPixel) || [0]))) - 50}px`,
-              left: `${hoveredSentence ? hoveredSentence.bbox.left : ((sentenceGroups.find(g => g.backendSentenceText === currentlyPlayingSentence)?.words[0]?.bbox[0] || 0) * pointToPixel)}px`,
+            initial={{ 
+              opacity: 0, 
+              y: 5, 
+              x: '-50%',
+              ...buttonPosition
             }}
+            animate={{ 
+              opacity: 1, 
+              y: 0, 
+              x: '-50%',
+              ...buttonPosition
+            }}
+            exit={{ opacity: 0, y: 5, x: '-50%' }}
+            className="pointer-events-auto absolute z-[80] pt-6" // pt-6 creates a hover 'bridge'
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
           >
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                if (isPlaying) return; // Prevent multiple calls while playing
                 if (hoveredSentence) onSentencePlay(hoveredSentence.backendSentenceText);
                 else if (currentlyPlayingSentence) onSentencePlay(currentlyPlayingSentence);
               }}
@@ -462,7 +536,6 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         }
 
         const [x0, y0, x1, y1] = word.bbox;
-        const hoverText = word.text.replace(/[^\w\s'’\-]|_/g, "").trim();
 
         let styleTop = y0 * pointToPixel;
         let styleHeight = (y1 - y0) * pointToPixel;
@@ -481,7 +554,9 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
         return (
           <div
             key={`${word.text}-${idx}`}
-            className="absolute cursor-pointer pointer-events-auto bg-transparent hover:bg-green-500/20 rounded-sm transition-all duration-75 group"
+            className={`absolute cursor-pointer pointer-events-auto bg-transparent rounded-sm transition-all duration-75 group ${
+              !currentlyPlayingSentence ? 'hover:bg-green-500/20' : ''
+            }`}
             style={{
               left: `${x0 * pointToPixel}px`,
               top: `${styleTop}px`,
@@ -494,9 +569,6 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
               onWordClick(word.text);
             }}
           >
-            <div className="opacity-0 group-hover:opacity-100 absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full px-2 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[70] pointer-events-none">
-                {hoverText}
-            </div>
           </div>
         );
       })}
@@ -773,9 +845,10 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const addToVocab = async () => {
     if (!selectedWord || !selectedWord.id) return;
     try {
-      await api.post('/api/vocab', null, {
-        params: { word_id: selectedWord.id }
-      });
+      const params: Record<string, number> = { word_id: selectedWord.id };
+      if (lastSentenceId) params.sentence_id = lastSentenceId;
+      if (bookId) params.book_id = bookId;
+      await api.post('/api/vocab', null, { params });
       // Close the word dialog (REQ-002: no confirmation dialog)
       setIsDialogOpen(false);
       setSelectedWord(null);
@@ -1196,14 +1269,21 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                         </div>
                       )}
 
-                      <button
-                        onClick={addToVocab}
-                        disabled={!selectedWord?.id}
-                        className="px-5 py-2.5 rounded-2xl font-bold transition-all text-sm bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 w-full py-4 text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus className="w-6 h-6" />
-                        Add to My Word Bank
-                      </button>
+                      {selectedWord?.in_vocab ? (
+                        <div className="px-5 py-4 rounded-2xl font-bold text-lg bg-amber-50 text-amber-600 border-2 border-amber-200 w-full flex items-center justify-center gap-3">
+                          <Check className="w-6 h-6" />
+                          Already in Word Wall
+                        </div>
+                      ) : (
+                        <button
+                          onClick={addToVocab}
+                          disabled={!selectedWord?.id}
+                          className="px-5 py-2.5 rounded-2xl font-bold transition-all text-sm bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 w-full py-4 text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Plus className="w-6 h-6" />
+                          Add to My Word Bank
+                        </button>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>

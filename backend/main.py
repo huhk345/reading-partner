@@ -328,6 +328,9 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
         b = db.query(Book).filter(Book.id == occ.book_id).first()
         if s and b:
             occurrence_contexts.append({"book": b.title, "sentence": s.text})
+    
+    # 5. Check if word is already in vocab
+    in_vocab = db.query(Vocab).filter(Vocab.word_id == db_word.id).first() is not None
             
     return {
         "id": db_word.id,
@@ -336,11 +339,12 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
         "phonetic": db_word.phonetic,
         "meaning": db_word.meaning,
         "audio_url": db_word.audio_url,
-        "occurrences": occurrence_contexts[:5] # Limit to 5 for UI simplicity
+        "occurrences": occurrence_contexts[:5], # Limit to 5 for UI simplicity
+        "in_vocab": in_vocab
     }
 
 @app.post("/api/vocab")
-def add_to_vocab(word_id: int, db: Session = Depends(get_db)):
+def add_to_vocab(word_id: int, sentence_id: Optional[int] = None, book_id: Optional[int] = None, db: Session = Depends(get_db)):
     # Check if already in vocab
     db_vocab = db.query(Vocab).filter(Vocab.word_id == word_id).first()
     if not db_vocab:
@@ -352,6 +356,22 @@ def add_to_vocab(word_id: int, db: Session = Depends(get_db)):
             db.rollback()
             # Already added by another request, just continue
             pass
+
+    # Also capture the sentence context if provided
+    if book_id and sentence_id:
+        existing_occ = db.query(WordOccurrence).filter(
+            WordOccurrence.word_id == word_id,
+            WordOccurrence.sentence_id == sentence_id
+        ).first()
+        if not existing_occ:
+            occ = WordOccurrence(word_id=word_id, sentence_id=sentence_id, book_id=book_id)
+            try:
+                db.add(occ)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                pass
+
     return {"status": "success"}
 
 @app.get("/api/vocab/review")

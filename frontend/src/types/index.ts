@@ -41,6 +41,7 @@ export interface WordDefinition {
   meaning?: string;
   audio_url?: string;
   occurrences?: { book: string; sentence: string }[];
+  in_vocab?: boolean;
 }
 
 export interface VocabReview {
