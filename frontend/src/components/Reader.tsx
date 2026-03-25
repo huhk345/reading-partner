@@ -750,6 +750,10 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
       audio.onended = () => onComplete?.();
       return;
     }
+    if (!text.includes(' ')) {
+      fallbackSpeak(text, onComplete);
+      return;
+    }
     try {
       const response = await api.post('/api/tts', null, {
         params: { text }

@@ -56,18 +56,31 @@ const ClayWordCard = ({
     return baseHeight + Math.min(extraHeight, 150);
   };
 
+  const getSentenceHeight = (sentence: string | undefined | null) => {
+    if (!sentence) return 0;
+    const baseHeight = 50;
+    const text = sentence;
+    const newlineCount = (text.match(/\n/g) || []).length;
+    const extraHeight = Math.max(0, (text.length - 60) / 2.5) + (newlineCount * 18);
+    return baseHeight + Math.min(extraHeight, 120);
+  };
+
   return (
     <motion.div 
-      className="relative perspective-1000 cursor-pointer group"
+      layout
+      className="relative perspective-1000 cursor-pointer group break-inside-avoid w-full"
       onClick={() => setIsFlipped(!isFlipped)}
       whileHover={{ scale: 1.02, y: -4 }}
       whileTap={{ scale: 0.98 }}
-      animate={{ height: isFlipped ? 280 + getMeaningHeight(review.meaning || '') : 200 }}
+      animate={{ 
+        height: isFlipped ? 280 + getMeaningHeight(review.meaning || '') + getSentenceHeight(review.sentence) : 200 
+      }}
       transition={{ 
         type: "spring", 
         stiffness: 150, 
         damping: 20,
-        mass: 0.8
+        mass: 0.8,
+        layout: { type: "spring", stiffness: 150, damping: 25 }
       }}
     >
       <motion.div
@@ -151,6 +164,8 @@ export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'wall' | 'game'>('wall');
+  const [columns, setColumns] = useState(2);
+  const [mounted, setMounted] = useState(false);
   const fetchedRef = useRef(false);
 
   const fetchReviews = useCallback(async () => {
@@ -163,6 +178,18 @@ export default function Review({ onBack }: ReviewProps) {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    const updateColumns = () => {
+      if (window.innerWidth >= 1024) setColumns(4);
+      else if (window.innerWidth >= 768) setColumns(3);
+      else setColumns(2);
+    };
+    updateColumns();
+    window.addEventListener('resize', updateColumns);
+    return () => window.removeEventListener('resize', updateColumns);
   }, []);
 
   useEffect(() => {
@@ -240,31 +267,47 @@ export default function Review({ onBack }: ReviewProps) {
           badge={{ icon: <Target className="w-5 h-5 text-white" />, text: `${reviews.length} words collected!` }}
         />
 
-        <motion.div 
-          layout
-          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 pb-20 align-start"
-        >
-          <AnimatePresence>
-            {reviews.map((review, idx) => (
-              <motion.div
-                key={review.vocab_id}
-                initial={{ opacity: 0, y: 30, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ 
-                  type: "spring", 
-                  stiffness: 100, 
-                  damping: 20,
-                  delay: idx * 0.05 
-                }}
-              >
-                <ClayWordCard 
-                  review={review} 
-                  index={idx}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <div className="flex gap-6 md:gap-8 pb-20 items-start">
+          {mounted ? (
+            Array.from({ length: columns }).map((_, colIdx) => (
+              <div key={colIdx} className="flex-1 flex flex-col gap-6 md:gap-8">
+                <AnimatePresence mode="popLayout">
+                  {reviews.filter((_, idx) => idx % columns === colIdx).map((review) => {
+                    const originalIndex = reviews.findIndex(r => r.vocab_id === review.vocab_id);
+                    return (
+                      <motion.div
+                        key={review.vocab_id}
+                        layout
+                        initial={{ opacity: 0, y: 30, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        transition={{ 
+                          type: "spring", 
+                          stiffness: 100, 
+                          damping: 20,
+                          delay: originalIndex * 0.05 
+                        }}
+                      >
+                        <ClayWordCard 
+                          review={review} 
+                          index={originalIndex}
+                        />
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            ))
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 w-full">
+              {reviews.map((review, idx) => (
+                <div key={review.vocab_id}>
+                  <ClayWordCard review={review} index={idx} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

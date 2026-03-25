@@ -23,6 +23,21 @@ const MAX_SCORE = 20;
 const TIME_LIMIT = 120;
 const SLOTS_COUNT = 5;
 
+function extractShortMeaning(meaning: string): string {
+  if (!meaning) return '';
+  const cleaned = meaning
+    .replace(/（[^）]*）/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/【[^】]*】/g, '')
+    .replace(
+      /\b(n|v|vt|vi|a|adj|adv|prep|conj|pron|interj|det|art|abbr)\.\s*/g,
+      ''
+    );
+  const parts = cleaned.split(/[,，\s]+/).filter((s) => s.trim());
+  return parts.slice(0, 2).join('，');
+}
+
 function buildSlots(reviews: VocabReview[]) {
   const shuffled = [...reviews].sort(() => Math.random() - 0.5);
   const initialPairs = shuffled.slice(0, SLOTS_COUNT);
@@ -42,13 +57,47 @@ function buildSlots(reviews: VocabReview[]) {
     .map((r) => ({
       id: `right-${r.vocab_id}-0`,
       vocabId: r.vocab_id,
-      text: r.meaning || '',
+      text: extractShortMeaning(r.meaning || ''),
       lang: 'zh' as const,
       state: 'idle' as const,
     }))
     .sort(() => Math.random() - 0.5);
 
   return { left, right, queue: initialQueue };
+}
+
+const slotBase =
+  'absolute inset-0 w-full h-full rounded-2xl flex items-center justify-center text-lg font-bold transition-all active:scale-95 select-none backdrop-blur-md border shadow-lg';
+
+function slotClass(
+  state: SlotData['state'],
+  isSelected: boolean,
+  lang: 'en' | 'zh'
+) {
+  if (state === 'correct') {
+    return cn(
+      slotBase,
+      'bg-emerald-400/70 border-emerald-300/80 text-white shadow-emerald-500/20 z-10'
+    );
+  }
+  if (state === 'wrong') {
+    return cn(
+      slotBase,
+      'bg-red-400/70 border-red-300/80 text-white shadow-red-500/20 z-10'
+    );
+  }
+  if (isSelected) {
+    return cn(
+      slotBase,
+      lang === 'en'
+        ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-700 shadow-emerald-500/10 ring-2 ring-emerald-400/40'
+        : 'bg-sky-500/25 border-sky-400/50 text-sky-700 shadow-sky-500/10 ring-2 ring-sky-400/40'
+    );
+  }
+  return cn(
+    slotBase,
+    'bg-white/60 border-white/80 text-slate-700 hover:bg-white/80 hover:border-white/90'
+  );
 }
 
 export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
@@ -87,7 +136,6 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
     setTimeLeft(TIME_LIMIT);
   });
 
-  // Timer with integrated game-over detection
   useEffect(() => {
     if (gameOver) return;
 
@@ -105,7 +153,6 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
     return () => clearInterval(timer);
   }, [gameOver]);
 
-  // Detect time up in a separate effect that only triggers the game-over state
   useEffect(() => {
     if (timeLeft === 0 && !gameOver) {
       setGameOver({ won: false });
@@ -189,7 +236,7 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
                 newSlots[newRight] = {
                   id: `right-${nextReview.vocab_id}-${newScore}`,
                   vocabId: nextReview.vocab_id,
-                  text: nextReview.meaning || '',
+                  text: extractShortMeaning(nextReview.meaning || ''),
                   lang: 'zh',
                   state: 'idle',
                 };
@@ -238,103 +285,126 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
 
   if (gameOver) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 animate-in zoom-in-95 duration-500">
-        <motion.div
-          initial={{ scale: 0, rotate: -180 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-          className={cn(
-            'w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl',
-            gameOver.won
-              ? 'bg-gradient-to-br from-green-400 to-emerald-500'
-              : 'bg-gradient-to-br from-orange-400 to-red-500'
-          )}
-        >
-          <Trophy className="w-16 h-16" />
-        </motion.div>
-        <div className="text-center space-y-2">
-          <h2 className="text-4xl font-black text-slate-800">
-            {gameOver.won ? 'You Win!' : 'Time Up!'}
-          </h2>
-          <p className="text-xl font-bold text-slate-500">
-            Score: {score} / {MAX_SCORE}
-          </p>
-        </div>
-        <div className="flex gap-4 w-full max-w-xs">
-          <button
-            onClick={() => {
-              const { left, right, queue } = buildSlots(reviews);
-              setLeftSlots(left);
-              setRightSlots(right);
-              queueRef.current = queue;
-              setScore(0);
-              scoreRef.current = 0;
-              setTimeLeft(TIME_LIMIT);
-              setSelectedLeft(null);
-              setSelectedRight(null);
-              setIsAnimating(false);
-              setGameOver(null);
-            }}
-            className="flex-1 py-4 rounded-2xl font-bold text-lg bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
+      <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
+        {/* Decorative blobs */}
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+
+        <div className="relative flex flex-col items-center gap-8 animate-in zoom-in-95 duration-500">
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+            className={cn(
+              'w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl',
+              gameOver.won
+                ? 'bg-gradient-to-br from-green-400 to-emerald-500'
+                : 'bg-gradient-to-br from-orange-400 to-red-500'
+            )}
           >
-            Play Again
-          </button>
-          <button
-            onClick={onBack}
-            className="flex-1 py-4 rounded-2xl font-bold text-lg bg-slate-200 text-slate-700 hover:bg-slate-300 active:scale-95 transition-all"
-          >
-            Word Wall
-          </button>
+            <Trophy className="w-16 h-16" />
+          </motion.div>
+          <div className="text-center space-y-2">
+            <h2 className="text-4xl font-black text-slate-800">
+              {gameOver.won ? 'You Win!' : 'Time Up!'}
+            </h2>
+            <p className="text-xl font-bold text-slate-500">
+              Score: {score} / {MAX_SCORE}
+            </p>
+          </div>
+          <div className="flex gap-4 w-full max-w-xs">
+            <button
+              onClick={() => {
+                const { left, right, queue } = buildSlots(reviews);
+                setLeftSlots(left);
+                setRightSlots(right);
+                queueRef.current = queue;
+                setScore(0);
+                scoreRef.current = 0;
+                setTimeLeft(TIME_LIMIT);
+                setSelectedLeft(null);
+                setSelectedRight(null);
+                setIsAnimating(false);
+                setGameOver(null);
+              }}
+              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-gradient-to-br from-green-400 to-emerald-500 text-white shadow-lg shadow-green-200/50 hover:shadow-xl hover:shadow-green-300/50 hover:scale-105 active:scale-95 transition-all border-b-4 border-emerald-600/40 active:border-b-0 active:translate-y-1"
+            >
+              Play Again
+            </button>
+            <button
+              onClick={onBack}
+              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-white/70 backdrop-blur-sm text-slate-600 border border-white/80 shadow-md hover:bg-white/90 active:scale-95 transition-all"
+            >
+              Word Wall
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center min-h-[80vh] p-4 max-w-2xl mx-auto w-full pt-8">
+    <div className="relative flex flex-col items-center min-h-[80vh] p-4 max-w-2xl mx-auto w-full pt-8 overflow-hidden">
+      {/* Decorative blobs */}
+      <div className="absolute top-20 -left-20 w-72 h-72 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+      <div className="absolute top-40 -right-16 w-60 h-60 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+      <div className="absolute bottom-20 left-1/3 w-48 h-48 bg-purple-200 rounded-full blur-3xl opacity-30 animate-levitate delay-500 pointer-events-none" />
+
       {/* HUD */}
-      <div className="w-full mb-8">
-        <div className="flex justify-between items-center mb-3 px-2">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 text-slate-400 hover:text-slate-600 font-bold transition-colors"
-          >
-            <X className="w-5 h-5" />
-            <span className="text-sm">Quit</span>
-          </button>
-          <div className="flex items-center gap-2 text-slate-300 font-bold text-xl">
-            <Timer
-              className={cn(
-                'w-6 h-6',
-                timeLeft < 15 && 'text-red-500 animate-pulse'
-              )}
+      <div className="relative w-full mb-8">
+        <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4">
+          <div className="flex justify-between items-center mb-3 px-2">
+            <button
+              onClick={onBack}
+              className="flex items-center gap-2 text-slate-400 hover:text-slate-600 font-bold transition-colors"
+            >
+              <X className="w-5 h-5" />
+              <span className="text-sm">Quit</span>
+            </button>
+            <div className="flex items-center gap-2 text-slate-600 font-bold text-xl">
+              <Timer
+                className={cn(
+                  'w-6 h-6',
+                  timeLeft < 15 && 'text-red-500 animate-pulse'
+                )}
+              />
+              <span
+                className={cn(
+                  'tabular-nums',
+                  timeLeft < 15 && 'text-red-500'
+                )}
+              >
+                {Math.floor(timeLeft / 60)}:
+                {(timeLeft % 60).toString().padStart(2, '0')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-600 font-bold text-xl">
+              <Trophy className="w-6 h-6 text-amber-500" />
+              <span className="tabular-nums">
+                {score} / {MAX_SCORE}
+              </span>
+            </div>
+          </div>
+          <div className="h-4 bg-white/50 backdrop-blur-sm rounded-full overflow-hidden border border-white/70 shadow-inner">
+            <motion.div
+              className="h-full bg-gradient-to-r from-green-400 to-emerald-400 rounded-full shadow-sm"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ type: 'spring', bounce: 0, duration: 0.5 }}
             />
-            <span className={cn(timeLeft < 15 && 'text-red-500')}>
-              {Math.floor(timeLeft / 60)}:
-              {(timeLeft % 60).toString().padStart(2, '0')}
-            </span>
           </div>
-          <div className="flex items-center gap-2 text-slate-300 font-bold text-xl">
-            <Trophy className="w-6 h-6 text-amber-400" />
-            <span>
-              {score} / {MAX_SCORE}
-            </span>
-          </div>
-        </div>
-        <div className="h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-          <motion.div
-            className="h-full bg-gradient-to-r from-green-500 to-emerald-400"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ type: 'spring', bounce: 0, duration: 0.5 }}
-          />
         </div>
       </div>
 
       {/* Grid */}
-      <div className="flex justify-center gap-4 w-full">
+      <div className="relative flex justify-center gap-4 w-full">
         {/* Left Column */}
         <div className="flex flex-col gap-3 flex-1">
+          <div className="text-center mb-1">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              English
+            </span>
+          </div>
           {leftSlots.map((slot, index) => (
             <div
               key={`left-slot-${index}`}
@@ -358,17 +428,11 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
                   transition={{ duration: 0.2 }}
                   onClick={() => handleSelect('left', index)}
                   className={cn(
-                    'absolute inset-0 w-full h-full rounded-2xl border-b-4 flex items-center justify-center text-lg font-bold transition-all active:border-b-0 active:translate-y-1 select-none',
-                    slot.state === 'idle' &&
-                      selectedLeft !== index &&
-                      'bg-slate-800 border-slate-900 text-slate-200 hover:bg-slate-700',
-                    selectedLeft === index &&
-                      slot.state === 'idle' &&
-                      'bg-indigo-500/20 border-indigo-600 text-indigo-300 ring-2 ring-indigo-500',
-                    slot.state === 'correct' &&
-                      'bg-green-500 border-green-700 text-white z-10',
-                    slot.state === 'wrong' &&
-                      'bg-red-500 border-red-700 text-white z-10'
+                    slotClass(
+                      slot.state,
+                      selectedLeft === index,
+                      'en'
+                    )
                   )}
                 >
                   {slot.text}
@@ -380,6 +444,11 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
 
         {/* Right Column */}
         <div className="flex flex-col gap-3 flex-1">
+          <div className="text-center mb-1">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              中文
+            </span>
+          </div>
           {rightSlots.map((slot, index) => (
             <div
               key={`right-slot-${index}`}
@@ -403,17 +472,11 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
                   transition={{ duration: 0.2 }}
                   onClick={() => handleSelect('right', index)}
                   className={cn(
-                    'absolute inset-0 w-full h-full rounded-2xl border-b-4 flex items-center justify-center text-lg font-bold transition-all active:border-b-0 active:translate-y-1 select-none',
-                    slot.state === 'idle' &&
-                      selectedRight !== index &&
-                      'bg-slate-800 border-slate-900 text-slate-200 hover:bg-slate-700',
-                    selectedRight === index &&
-                      slot.state === 'idle' &&
-                      'bg-indigo-500/20 border-indigo-600 text-indigo-300 ring-2 ring-indigo-500',
-                    slot.state === 'correct' &&
-                      'bg-green-500 border-green-700 text-white z-10',
-                    slot.state === 'wrong' &&
-                      'bg-red-500 border-red-700 text-white z-10'
+                    slotClass(
+                      slot.state,
+                      selectedRight === index,
+                      'zh'
+                    )
                   )}
                 >
                   {slot.text}
