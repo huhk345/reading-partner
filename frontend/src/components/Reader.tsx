@@ -85,7 +85,7 @@ interface WordOverlayProps {
   pageData?: PageData;
   renderedWidth: number;
   renderedHeight: number;
-  onWordClick: (word: string) => void;
+  onWordClick: (word: string, sentenceText?: string) => void;
   onSentencePlay: (sentenceText: string) => void;
   sentences?: Sentence[];
   currentlyPlayingSentence: string | null;
@@ -358,11 +358,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     ).filter(words => words.length > 0);
   }, [activeSentenceWords]);
 
-  if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
-    return null;
-  }
-
-  const pointToPixel = renderedWidth / pageData.width;
+  const pointToPixel = (pageData && pageData.width) ? renderedWidth / pageData.width : 0;
 
   const handleMouseEnter = (wordIdx: number) => {
     // Suppress hover if a sentence is currently playing
@@ -378,7 +374,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       return wordIdx >= start && wordIdx < end;
     });
 
-    if (group && group.isValid) {
+    if (group && group.isValid && pageData) {
       const top = Math.min(...group.words.map(w => w.bbox[1] * pointToPixel));
       const left = Math.min(...group.words.map(w => w.bbox[0] * pointToPixel));
       const right = Math.max(...group.words.map(w => w.bbox[2] * pointToPixel));
@@ -401,7 +397,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     let top = 0;
     let left = 0;
 
-    if (hoveredWordIdx !== null && pageData.words[hoveredWordIdx]) {
+    if (hoveredWordIdx !== null && pageData?.words?.[hoveredWordIdx]) {
       const word = pageData.words[hoveredWordIdx];
       const line = activeSentenceVisualLines.find(l => l.includes(word));
       if (line && line.length > 0) {
@@ -424,7 +420,11 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     }
 
     return { top: `${top}px`, left: `${left}px` };
-  }, [hoveredWordIdx, pageData.words, activeSentenceVisualLines, pointToPixel, hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
+  }, [hoveredWordIdx, pageData?.words, activeSentenceVisualLines, pointToPixel, hoveredSentence, currentlyPlayingSentence, sentenceGroups]);
+
+  if (!pageData || !pageData.words || !pageData.width || renderedWidth <= 0) {
+    return null;
+  }
 
   return (
     <div 
@@ -566,7 +566,17 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
             onMouseEnter={() => handleMouseEnter(idx)}
             onClick={(e) => {
               e.stopPropagation();
-              onWordClick(word.text);
+              // Find group for this word
+              let currentCount = 0;
+              const group = sentenceGroups.find(g => {
+                  const start = currentCount;
+                  const end = currentCount + g.words.length;
+                  const match = idx >= start && idx < end;
+                  currentCount = end;
+                  return match;
+              });
+              const sentenceText = (group && group.isValid) ? group.backendSentenceText : undefined;
+              onWordClick(word.text, sentenceText);
             }}
           >
           </div>
@@ -593,6 +603,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [hasPlayedLemma, setHasPlayedLemma] = useState(false);
   const hasAutoPlayedRef = useRef(false);
   const [lastSentenceId, setLastSentenceId] = useState<number | undefined>();
+  const [lastSentenceText, setLastSentenceText] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -801,7 +812,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     return () => clearTimeout(delayDebounceFn);
   }, [inputWord, isDialogOpen, lastSentenceId, activeWord, selectedWord, lookupWord]);
 
-  const handleWordClick = async (word: string, sentenceId?: number) => {
+  const handleWordClick = async (word: string, sentenceId?: number, sentenceText?: string) => {
     // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
     const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
@@ -810,12 +821,13 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     setIsDialogOpen(true);
     setInputWord(cleanWord);
     setLastSentenceId(sentenceId);
+    setLastSentenceText(sentenceText);
     setOriginalWord(cleanWord);
     setActiveWord(cleanWord);
     setLemma(undefined);
     setHasPlayedLemma(false);
     hasAutoPlayedRef.current = false;
-    console.log('handleWordClick:', cleanWord, sentenceId);
+    console.log('handleWordClick:', cleanWord, sentenceId, sentenceText);
     setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
     
     await lookupWord(cleanWord, sentenceId, false);
@@ -845,8 +857,9 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const addToVocab = async () => {
     if (!selectedWord || !selectedWord.id) return;
     try {
-      const params: Record<string, number> = { word_id: selectedWord.id };
+      const params: Record<string, string | number> = { word_id: selectedWord.id };
       if (lastSentenceId) params.sentence_id = lastSentenceId;
+      if (lastSentenceText) params.sentence_text = lastSentenceText;
       if (bookId) params.book_id = bookId;
       await api.post('/api/vocab', null, { params });
       // Close the word dialog (REQ-002: no confirmation dialog)
@@ -944,7 +957,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                             pageData={book.pages_data?.[index]}
                             renderedWidth={renderedPages[index].width}
                             renderedHeight={renderedPages[index].height}
-                            onWordClick={handleWordClick}
+                            onWordClick={(word, text) => handleWordClick(word, undefined, text)}
                             onSentencePlay={handleSentencePlay}
                             sentences={book.sentences}
                             currentlyPlayingSentence={currentlyPlayingSentence}
@@ -1250,21 +1263,14 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                         </p>
                       </div>
 
-                      {selectedWord?.occurrences && selectedWord.occurrences.length > 0 && (
+                      {selectedWord?.vocab_sentence && (
                         <div className="mb-8">
                           <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                             <History className="w-4 h-4" />
-                            Seen before
+                            Context
                           </h4>
-                          <div className="max-h-32 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                            {selectedWord.occurrences.map((occ, idx) => (
-                              <div key={idx} className="p-4 bg-slate-50 rounded-2xl text-slate-600 italic border-l-4 border-slate-200">
-                                &quot;{occ.sentence}&quot;
-                                <span className="block text-xs text-slate-400 mt-2 not-italic font-bold uppercase tracking-wider">
-                                  From: {occ.book}
-                                </span>
-                              </div>
-                            ))}
+                          <div className="p-4 bg-white/40 backdrop-blur-md rounded-2xl text-slate-600 italic border-l-4 border-indigo-300 border border-white/50 shadow-sm text-sm">
+                            &quot;{selectedWord.vocab_sentence}&quot;
                           </div>
                         </div>
                       )}

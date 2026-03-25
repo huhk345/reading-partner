@@ -40,7 +40,7 @@ export interface WordDefinition {
   phonetic?: string;
   meaning?: string;
   audio_url?: string;
-  occurrences?: { book: string; sentence: string }[];
+  vocab_sentence?: string;
   in_vocab?: boolean;
 }
 
@@ -54,7 +54,7 @@ export interface VocabReview {
   interval: number;
   repetition: number;
   ef: number;
-  occurrences?: { book: string; sentence: string }[];
+  sentence?: string;
 }
 
 export interface ActivityDay {

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Float, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import datetime
@@ -34,7 +34,6 @@ class Sentence(Base):
     text = Column(Text)
     index = Column(Integer)
     book = relationship("Book", back_populates="sentences")
-    occurrences = relationship("WordOccurrence", back_populates="sentence")
 
 class Word(Base):
     __tablename__ = "words"
@@ -43,25 +42,13 @@ class Word(Base):
     phonetic = Column(String, nullable=True)
     meaning = Column(Text, nullable=True)
     audio_url = Column(String, nullable=True)
-    occurrences = relationship("WordOccurrence", back_populates="word")
     vocab = relationship("Vocab", back_populates="word", uselist=False)
-
-class WordOccurrence(Base):
-    __tablename__ = "word_occurrences"
-    id = Column(Integer, primary_key=True, index=True)
-    word_id = Column(Integer, ForeignKey("words.id"))
-    sentence_id = Column(Integer, ForeignKey("sentences.id"))
-    book_id = Column(Integer, ForeignKey("books.id"))
-    
-    __table_args__ = (UniqueConstraint('word_id', 'sentence_id', name='_word_sentence_uc'),)
-    
-    word = relationship("Word", back_populates="occurrences")
-    sentence = relationship("Sentence", back_populates="occurrences")
 
 class Vocab(Base):
     __tablename__ = "vocab"
     id = Column(Integer, primary_key=True, index=True)
     word_id = Column(Integer, ForeignKey("words.id"), unique=True)
+    sentence = Column(Text, nullable=True)
     added_time = Column(DateTime, default=datetime.datetime.utcnow)
     next_review = Column(DateTime, default=datetime.datetime.utcnow)
     interval = Column(Integer, default=0)

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
-import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen } from 'lucide-react';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2 } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
+import WordMatchGame from './WordMatchGame';
 
 interface ReviewProps {
   onBack: () => void;
@@ -47,10 +48,12 @@ const ClayWordCard = ({
   ];
   const cardStyle = colors[index % colors.length];
 
-  const getMeaningHeight = (meaning: string) => {
+  const getMeaningHeight = (meaning: string | undefined | null) => {
     const baseHeight = 60;
-    const extraHeight = Math.max(0, (meaning.length - 80) / 2);
-    return baseHeight + Math.min(extraHeight, 80);
+    const text = meaning || '';
+    const newlineCount = (text.match(/\n/g) || []).length;
+    const extraHeight = Math.max(0, (text.length - 80) / 2) + (newlineCount * 20);
+    return baseHeight + Math.min(extraHeight, 150);
   };
 
   return (
@@ -102,10 +105,10 @@ const ClayWordCard = ({
 
         {/* Back of Card - Tactile Clean Design */}
         <div 
-          className="absolute inset-0 backface-hidden rounded-[32px] bg-white p-4 flex flex-col rotate-y-180 border-2 border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,1)]"
+          className="absolute inset-0 backface-hidden rounded-[32px] bg-white p-4 flex flex-col rotate-y-180 border-2 border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,1)] overflow-hidden"
           style={{ transform: 'rotateY(180deg)' }}
         >
-          <div className="flex-1 space-y-2">
+          <div className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
             <div className="text-center pt-1">
               <h4 className="text-lg font-black text-slate-800 leading-tight font-baloo">{review.word}</h4>
               <p className="text-indigo-400 font-bold text-[10px] uppercase tracking-widest">{review.phonetic}</p>
@@ -115,19 +118,19 @@ const ClayWordCard = ({
             
             <div className="space-y-1">
               <span className="text-[9px] font-black text-indigo-300 uppercase tracking-widest px-2 py-0.5 bg-indigo-50 rounded-full">Meaning</span>
-              <p className="text-slate-700 font-semibold text-sm leading-relaxed italic px-1">
+              <p className="text-slate-700 font-semibold text-base leading-relaxed italic px-1 whitespace-pre-line">
                 {review.meaning}
               </p>
             </div>
 
-            {review.occurrences && review.occurrences.length > 0 && (
+            {review.sentence && (
               <div className="pt-1">
                 <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
                   <History className="w-2.5 h-2.5 text-indigo-300" />
                   Context
                 </h5>
                 <div className="p-2 rounded-xl bg-slate-50/50 border border-slate-100 italic text-[10px] text-slate-500 leading-tight relative">
-                  &quot;{review.occurrences[0].sentence}&quot;
+                  &quot;{review.sentence}&quot;
                 </div>
               </div>
             )}
@@ -147,12 +150,12 @@ const ClayWordCard = ({
 export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'wall' | 'game'>('wall');
   const fetchedRef = useRef(false);
 
   const fetchReviews = useCallback(async () => {
     setLoading(true);
     try {
-      // Changed to the new /all endpoint to see everything
       const response = await api.get('/api/vocab/all');
       setReviews(response.data);
     } catch (error) {
@@ -208,8 +211,27 @@ export default function Review({ onBack }: ReviewProps) {
     );
   }
 
+  if (mode === 'game') {
+    return <WordMatchGame reviews={reviews} onBack={() => setMode('wall')} />;
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full">
+      {reviews.length >= 5 && (
+        <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-20">
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => setMode('game')}
+            className="px-5 py-2.5 rounded-2xl font-bold transition-all text-base bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 hover:scale-105 group"
+          >
+            <div className="flex items-center">
+              <Gamepad2 className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
+              <span>Play Match Game</span>
+            </div>
+          </motion.button>
+        </div>
+      )}
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <Title 
           title="Word Wall" 

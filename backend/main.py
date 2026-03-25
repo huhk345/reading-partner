@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-from database import SessionLocal, init_db, Book, Sentence, Word, WordOccurrence, Vocab, ActivityLog, get_db
+from database import SessionLocal, init_db, Book, Sentence, Word, Vocab, ActivityLog, get_db
 from parser.pdf_parser import parse_pdf
 from parser.epub_parser import parse_epub
 from parser.llm_parser import get_book_info_and_clean_text, split_sentences_llm
@@ -122,9 +122,7 @@ def process_book_background(book_id: int):
             book.cover_image = cover_filename
         
         # Clear existing sentences if any (for reparse)
-        sentence_ids = [s.id for s in book.sentences]
-        if sentence_ids:
-            db.query(WordOccurrence).filter(WordOccurrence.sentence_id.in_(sentence_ids)).delete(synchronize_session=False)
+        if book.sentences:
             db.query(Sentence).filter(Sentence.book_id == book_id).delete()
         
         for i, s_text in enumerate(sentences):
@@ -304,33 +302,14 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
             if not db_word:
                 return {"word": word, "error": "Not found"}
     
-    # 3. Track occurrence if book/sentence info provided
-    if book_id and sentence_id:
-        existing_occ = db.query(WordOccurrence).filter(
-            WordOccurrence.word_id == db_word.id,
-            WordOccurrence.sentence_id == sentence_id
-        ).first()
-        if not existing_occ:
-            occ = WordOccurrence(word_id=db_word.id, sentence_id=sentence_id, book_id=book_id)
-            try:
-                db.add(occ)
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                pass
+    # 3. Track activity
+    if book_id:
         log_activity(db, "word_lookup", book_id=book_id)
             
-    # 4. Fetch previous occurrences for context
-    occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == db_word.id).all()
-    occurrence_contexts = []
-    for occ in occurrences:
-        s = db.query(Sentence).filter(Sentence.id == occ.sentence_id).first()
-        b = db.query(Book).filter(Book.id == occ.book_id).first()
-        if s and b:
-            occurrence_contexts.append({"book": b.title, "sentence": s.text})
-    
-    # 5. Check if word is already in vocab
-    in_vocab = db.query(Vocab).filter(Vocab.word_id == db_word.id).first() is not None
+    # 4. Check if word is already in vocab and get its context sentence
+    db_vocab = db.query(Vocab).filter(Vocab.word_id == db_word.id).first()
+    in_vocab = db_vocab is not None
+    vocab_sentence = db_vocab.sentence if db_vocab else None
             
     return {
         "id": db_word.id,
@@ -339,38 +318,30 @@ def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Option
         "phonetic": db_word.phonetic,
         "meaning": db_word.meaning,
         "audio_url": db_word.audio_url,
-        "occurrences": occurrence_contexts[:5], # Limit to 5 for UI simplicity
+        "vocab_sentence": vocab_sentence,
         "in_vocab": in_vocab
     }
 
 @app.post("/api/vocab")
-def add_to_vocab(word_id: int, sentence_id: Optional[int] = None, book_id: Optional[int] = None, db: Session = Depends(get_db)):
-    # Check if already in vocab
+def add_to_vocab(word_id: int, sentence_text: Optional[str] = None, book_id: Optional[int] = None, db: Session = Depends(get_db)):
     db_vocab = db.query(Vocab).filter(Vocab.word_id == word_id).first()
+
     if not db_vocab:
-        db_vocab = Vocab(word_id=word_id)
+        db_vocab = Vocab(word_id=word_id, sentence=sentence_text)
         try:
             db.add(db_vocab)
             db.commit()
         except IntegrityError:
             db.rollback()
             # Already added by another request, just continue
-            pass
-
-    # Also capture the sentence context if provided
-    if book_id and sentence_id:
-        existing_occ = db.query(WordOccurrence).filter(
-            WordOccurrence.word_id == word_id,
-            WordOccurrence.sentence_id == sentence_id
-        ).first()
-        if not existing_occ:
-            occ = WordOccurrence(word_id=word_id, sentence_id=sentence_id, book_id=book_id)
-            try:
-                db.add(occ)
+            db_vocab = db.query(Vocab).filter(Vocab.word_id == word_id).first()
+            if db_vocab and sentence_text:
+                db_vocab.sentence = sentence_text
                 db.commit()
-            except IntegrityError:
-                db.rollback()
-                pass
+    elif sentence_text:
+        # Update sentence if provided (optional: maybe only if not already set?)
+        db_vocab.sentence = sentence_text
+        db.commit()
 
     return {"status": "success"}
 
@@ -384,15 +355,6 @@ def get_review_list(db: Session = Depends(get_db)):
     for r in reviews:
         w = db.query(Word).filter(Word.id == r.word_id).first()
         if w:
-            # Fetch occurrences for context
-            occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == w.id).all()
-            occurrence_contexts = []
-            for occ in occurrences:
-                s = db.query(Sentence).filter(Sentence.id == occ.sentence_id).first()
-                b = db.query(Book).filter(Book.id == occ.book_id).first()
-                if s and b:
-                    occurrence_contexts.append({"book": b.title, "sentence": s.text})
-                    
             result.append({
                 "vocab_id": r.id,
                 "word_id": w.id,
@@ -403,7 +365,7 @@ def get_review_list(db: Session = Depends(get_db)):
                 "interval": r.interval,
                 "repetition": r.repetition,
                 "ef": r.ef,
-                "occurrences": occurrence_contexts[:3] # Limit to 3 for review context
+                "sentence": r.sentence
             })
     return result
 
@@ -416,15 +378,6 @@ def get_all_vocab(db: Session = Depends(get_db)):
     for r in reviews:
         w = db.query(Word).filter(Word.id == r.word_id).first()
         if w:
-            # Fetch occurrences for context
-            occurrences = db.query(WordOccurrence).filter(WordOccurrence.word_id == w.id).all()
-            occurrence_contexts = []
-            for occ in occurrences:
-                s = db.query(Sentence).filter(Sentence.id == occ.sentence_id).first()
-                b = db.query(Book).filter(Book.id == occ.book_id).first()
-                if s and b:
-                    occurrence_contexts.append({"book": b.title, "sentence": s.text})
-                    
             result.append({
                 "vocab_id": r.id,
                 "word_id": w.id,
@@ -435,7 +388,7 @@ def get_all_vocab(db: Session = Depends(get_db)):
                 "interval": r.interval,
                 "repetition": r.repetition,
                 "ef": r.ef,
-                "occurrences": occurrence_contexts[:3]
+                "sentence": r.sentence
             })
     return result
 
