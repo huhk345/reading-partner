@@ -28,7 +28,7 @@ const ClayWordCard = ({
       hoverTimerRef.current = setTimeout(() => {
         setIsFlipped(true);
         setIsAutoFlipped(true);
-      }, 2000);
+      }, 1000);
     }
   };
 
@@ -97,11 +97,11 @@ const ClayWordCard = ({
 
   const getSentenceHeight = (sentence: string | undefined | null) => {
     if (!sentence) return 0;
-    const baseHeight = 50;
+    const baseHeight = 70;
     const text = sentence;
     const newlineCount = (text.match(/\n/g) || []).length;
-    const extraHeight = Math.max(0, (text.length - 60) / 2.5) + (newlineCount * 18);
-    return baseHeight + Math.min(extraHeight, 120);
+    const extraHeight = Math.max(0, (text.length - 40) / 1.8) + (newlineCount * 24);
+    return baseHeight + Math.min(extraHeight, 180);
   };
 
   return (
@@ -178,12 +178,12 @@ const ClayWordCard = ({
             </div>
 
             {review.sentence && (
-              <div className="pt-1">
-                <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                  <History className="w-2.5 h-2.5 text-indigo-300" />
+              <div className="pt-2">
+                <h5 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                  <History className="w-3 h-3 text-indigo-300" />
                   Context
                 </h5>
-                <div className="p-2 rounded-xl bg-slate-50/50 border border-slate-100 italic text-[10px] text-slate-500 leading-tight relative">
+                <div className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 italic text-sm text-slate-500 leading-relaxed relative">
                   &quot;{review.sentence}&quot;
                 </div>
               </div>
