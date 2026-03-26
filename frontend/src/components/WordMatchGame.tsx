@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VocabReview } from '../types';
-import { cn } from '../lib/utils';
-import { Timer, Trophy, X } from 'lucide-react';
+import { cn, extractShortMeaning } from '../lib/utils';
+import { Timer, Trophy, X, Gamepad2 } from 'lucide-react';
 
 type SlotData = {
   id: string;
@@ -12,6 +12,7 @@ type SlotData = {
   text: string;
   lang: 'en' | 'zh';
   state: 'idle' | 'selected' | 'correct' | 'wrong';
+  audio_url?: string;
 };
 
 interface WordMatchGameProps {
@@ -19,23 +20,24 @@ interface WordMatchGameProps {
   onBack: () => void;
 }
 
-const MAX_SCORE = 20;
+const MAX_SCORE = 45;
 const TIME_LIMIT = 120;
 const SLOTS_COUNT = 5;
 
-function extractShortMeaning(meaning: string): string {
-  if (!meaning) return '';
-  const cleaned = meaning
-    .replace(/（[^）]*）/g, '')
-    .replace(/\([^)]*\)/g, '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/【[^】]*】/g, '')
-    .replace(
-      /\b(n|v|vt|vi|a|adj|adv|prep|conj|pron|interj|det|art|abbr)\.\s*/g,
-      ''
-    );
-  const parts = cleaned.split(/[,，\s]+/).filter((s) => s.trim());
-  return parts.slice(0, 2).join('，');
+function fallbackSpeak(text: string) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.speak(utterance);
+}
+
+function speakWord(word: string, audio_url?: string) {
+  if (audio_url) {
+    const audio = new Audio(audio_url);
+    audio.play().catch(() => fallbackSpeak(word));
+  } else {
+    fallbackSpeak(word);
+  }
 }
 
 function buildSlots(reviews: VocabReview[]) {
@@ -50,6 +52,7 @@ function buildSlots(reviews: VocabReview[]) {
       text: r.word,
       lang: 'en' as const,
       state: 'idle' as const,
+      audio_url: r.audio_url,
     }))
     .sort(() => Math.random() - 0.5);
 
@@ -169,6 +172,11 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
       if (side === 'left') {
         newLeft = selectedLeft === index ? null : index;
         setSelectedLeft(newLeft);
+        // Play word sound when clicking English word
+        const slot = leftSlots[index];
+        if (slot && slot.lang === 'en') {
+          speakWord(slot.text, slot.audio_url);
+        }
       } else {
         newRight = selectedRight === index ? null : index;
         setSelectedRight(newRight);
@@ -225,6 +233,7 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
                   text: nextReview.word,
                   lang: 'en',
                   state: 'idle',
+                  audio_url: nextReview.audio_url,
                 };
               }
               return newSlots;
@@ -312,7 +321,7 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
               Score: {score} / {MAX_SCORE}
             </p>
           </div>
-          <div className="flex gap-4 w-full max-w-xs">
+          <div className="flex flex-col gap-3 w-96">
             <button
               onClick={() => {
                 const { left, right, queue } = buildSlots(reviews);
@@ -327,15 +336,17 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
                 setIsAnimating(false);
                 setGameOver(null);
               }}
-              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-gradient-to-br from-green-400 to-emerald-500 text-white shadow-lg shadow-green-200/50 hover:shadow-xl hover:shadow-green-300/50 hover:scale-105 active:scale-95 transition-all border-b-4 border-emerald-600/40 active:border-b-0 active:translate-y-1"
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
             >
-              Play Again
+              <Gamepad2 className="w-6 h-6 group-hover:rotate-12 group-hover:scale-110 transition-transform" />
+              <span>Play Match Game</span>
             </button>
             <button
               onClick={onBack}
-              className="flex-1 py-4 rounded-2xl font-bold text-lg bg-white/70 backdrop-blur-sm text-slate-600 border border-white/80 shadow-md hover:bg-white/90 active:scale-95 transition-all"
+              className="w-full py-4 rounded-2xl font-bold text-lg border-2 border-slate-200 text-slate-500 hover:border-red-200 hover:text-red-500 hover:bg-red-50 active:scale-95 transition-all flex items-center justify-center gap-2 group"
             >
-              Word Wall
+              <X className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+              <span>Quit Game</span>
             </button>
           </div>
         </div>
@@ -356,10 +367,10 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
           <div className="flex justify-between items-center mb-3 px-2">
             <button
               onClick={onBack}
-              className="flex items-center gap-2 text-slate-400 hover:text-slate-600 font-bold transition-colors"
+              className="px-4 py-1.5 rounded-xl font-bold transition-all text-xs bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 flex items-center gap-1.5 group"
             >
-              <X className="w-5 h-5" />
-              <span className="text-sm">Quit</span>
+              <X className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+              <span>Quit Game</span>
             </button>
             <div className="flex items-center gap-2 text-slate-600 font-bold text-xl">
               <Timer

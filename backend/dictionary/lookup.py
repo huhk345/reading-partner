@@ -95,16 +95,6 @@ def lookup_word(word: str):
         if not phonetic and ecdict_data.get("phonetic"):
             phonetic = ecdict_data.get("phonetic")
 
-    # 3. LLM Fallback if no definition found
-    if not en_def:
-        prompt = f"""
-        Provide a concise English definition for the word: "{word}".
-        Return ONLY the definition.
-        """
-        llm_def = call_openrouter([{"role": "user", "content": prompt}])
-        if llm_def:
-            en_def = llm_def.strip()
-
     # 4. Combine results
     if not en_def and not zh_trans:
         return None
