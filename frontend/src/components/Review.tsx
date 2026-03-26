@@ -20,6 +20,45 @@ const ClayWordCard = ({
   index: number;
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isAutoFlipped, setIsAutoFlipped] = useState(false);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnter = () => {
+    if (!isFlipped) {
+      hoverTimerRef.current = setTimeout(() => {
+        setIsFlipped(true);
+        setIsAutoFlipped(true);
+      }, 2000);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    if (isAutoFlipped) {
+      setIsFlipped(false);
+      setIsAutoFlipped(false);
+    }
+  };
+
+  const handleCardClick = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setIsFlipped(!isFlipped);
+    setIsAutoFlipped(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+      }
+    };
+  }, []);
 
   const speak = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -69,7 +108,9 @@ const ClayWordCard = ({
     <motion.div 
       layout
       className="relative perspective-1000 cursor-pointer group break-inside-avoid w-full"
-      onClick={() => setIsFlipped(!isFlipped)}
+      onClick={handleCardClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       whileHover={{ scale: 1.02, y: -4 }}
       whileTap={{ scale: 0.98 }}
       animate={{ 
