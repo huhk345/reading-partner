@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { api } from '../lib/api';
 import { VocabReview } from '../types';
 import { cn, extractShortMeaning } from '../lib/utils';
 import { Timer, Trophy, X, Gamepad2 } from 'lucide-react';
@@ -31,17 +32,34 @@ function fallbackSpeak(text: string) {
   window.speechSynthesis.speak(utterance);
 }
 
-function speakWord(word: string, audio_url?: string) {
+async function speakWord(word: string, audio_url?: string) {
+  const playAudio = (url: string) => {
+    return new Promise<boolean>((resolve) => {
+      const audio = new Audio(url);
+      audio.onended = () => resolve(true);
+      audio.onerror = () => resolve(false);
+      audio.play();
+      setTimeout(() => resolve(false), 3000);
+    });
+  };
+
   if (audio_url) {
-    const audio = new Audio(audio_url);
-    audio.play().catch(() => fallbackSpeak(word));
-  } else {
-    fallbackSpeak(word);
+    const success = await playAudio(audio_url);
+    if (success) return;
   }
+  try {
+    const res = await api.post('/api/tts/light', { text: word });
+    if (res.data.audio_url) {
+      await playAudio(res.data.audio_url);
+    }
+  } catch {}
 }
 
 function buildSlots(reviews: VocabReview[]) {
-  const shuffled = [...reviews].sort(() => Math.random() - 0.5);
+  const withChinese = reviews.filter(
+    (r) => extractShortMeaning(r.meaning || '') !== ''
+  );
+  const shuffled = [...withChinese].sort(() => Math.random() - 0.5);
   const initialPairs = shuffled.slice(0, SLOTS_COUNT);
   const initialQueue = shuffled.slice(SLOTS_COUNT);
 
@@ -104,49 +122,54 @@ function slotClass(
 }
 
 export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
-  const [leftSlots, setLeftSlots] = useState<SlotData[]>([]);
-  const [rightSlots, setRightSlots] = useState<SlotData[]>([]);
+  const buildInitial = useCallback(() => {
+    const validReviews = reviews.filter(
+      (r) => extractShortMeaning(r.meaning || '') !== ''
+    );
+    if (validReviews.length < SLOTS_COUNT) return null;
+    return { ...buildSlots(reviews), validReviews };
+  }, [reviews]);
+
+  const initial = buildInitial();
+
+  const [leftSlots, setLeftSlots] = useState<SlotData[]>(
+    () => initial?.left ?? []
+  );
+  const [rightSlots, setRightSlots] = useState<SlotData[]>(
+    () => initial?.right ?? []
+  );
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
   const [selectedRight, setSelectedRight] = useState<number | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [gameOver, setGameOver] = useState<{ won: boolean } | null>(null);
-  const initedRef = useRef(false);
   const scoreRef = useRef(0);
-  const queueRef = useRef<VocabReview[]>([]);
-  const reviewsRef = useRef(reviews);
+  const queueRef = useRef<VocabReview[]>(initial?.queue ?? []);
+  const reviewsRef = useRef(initial?.validReviews ?? reviews);
+  const gameOverSetRef = useRef(false);
 
   useEffect(() => {
-    reviewsRef.current = reviews;
-  }, [reviews]);
-
-  useEffect(() => {
-    if (initedRef.current) return;
-    initedRef.current = true;
-
-    if (reviews.length < SLOTS_COUNT) {
+    if (!initial) {
       onBack();
       return;
     }
-
-    const { left, right, queue } = buildSlots(reviews);
-    setLeftSlots(left);
-    setRightSlots(right);
-    queueRef.current = queue;
-    setScore(0);
-    scoreRef.current = 0;
-    setTimeLeft(TIME_LIMIT);
-  });
+    reviewsRef.current = initial.validReviews;
+  }, [initial, onBack]);
 
   useEffect(() => {
     if (gameOver) return;
 
+    gameOverSetRef.current = false;
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         const next = prev - 1;
         if (next <= 0) {
           clearInterval(timer);
+          if (!gameOverSetRef.current) {
+            gameOverSetRef.current = true;
+            setGameOver({ won: false });
+          }
           return 0;
         }
         return next;
@@ -155,12 +178,6 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
 
     return () => clearInterval(timer);
   }, [gameOver]);
-
-  useEffect(() => {
-    if (timeLeft === 0 && !gameOver) {
-      setGameOver({ won: false });
-    }
-  }, [timeLeft, gameOver]);
 
   const handleSelect = useCallback(
     (side: 'left' | 'right', index: number) => {
@@ -172,7 +189,7 @@ export default function WordMatchGame({ reviews, onBack }: WordMatchGameProps) {
       if (side === 'left') {
         newLeft = selectedLeft === index ? null : index;
         setSelectedLeft(newLeft);
-        // Play word sound when clicking English word
+        // Play word sound when clicking English word (always use light TTS)
         const slot = leftSlots[index];
         if (slot && slot.lang === 'en') {
           speakWord(slot.text, slot.audio_url);

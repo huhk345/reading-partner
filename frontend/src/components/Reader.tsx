@@ -28,24 +28,49 @@ function fallbackSpeak(text: string, onComplete?: () => void) {
   window.speechSynthesis.speak(utterance);
 }
 
-function endsWithSentencePunctuation(text: string, abbreviations: string[]): boolean {
-  if (!text) return false;
-  
+function endsWithSentencePunctuation(text: string, abbreviations: string[], inQuotes: boolean): { endsWithPunctuation: boolean, nextInQuotes: boolean } {
+  if (!text) return { endsWithPunctuation: false, nextInQuotes: inQuotes };
+
   const abbreviationPattern = abbreviations.map(a => a.replace(/\./g, '\\.')).join('|');
   const protectedText = text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
-  
-  const lastMatch = protectedText.match(/[.!?…]["'"]?(?:\s+|$)/g);
-  
-  if (!lastMatch) return false;
-  
-  const lastEnding = lastMatch[lastMatch.length - 1];
-  const endingIndex = protectedText.lastIndexOf(lastEnding);
-  const afterEnding = protectedText.slice(endingIndex + lastEnding.length).trim();
-  
-  if (afterEnding.length === 0) return true;
-  if (/^[A-Z]/.test(afterEnding)) return true;
-  
-  return false;
+
+  const quoteChars = '"“”';
+  let currentInQuotes = inQuotes;
+  let splitDetected = false;
+
+  for (let i = 0; i < protectedText.length; i++) {
+    const c = protectedText[i];
+    if (quoteChars.includes(c)) {
+      currentInQuotes = !currentInQuotes;
+    }
+
+    // Rule: if we encounter ."/?"/!" we should split there
+    if ('.!?…'.includes(c) && i + 1 < protectedText.length && quoteChars.includes(protectedText[i + 1])) {
+      if (currentInQuotes) {
+        // Toggle quotes because the next char is the closing quote
+        currentInQuotes = !currentInQuotes;
+        i++; // skip the quote
+        splitDetected = true;
+      }
+    }
+    // Rule: split outside quotes
+    else if ('.!?…'.includes(c) && !currentInQuotes) {
+      if (i + 1 === protectedText.length || /\s/.test(protectedText[i + 1])) {
+        splitDetected = true;
+      }
+    }
+    
+    if (splitDetected && i < protectedText.length - 1) {
+        // If we detected a split but there's more text in this word, 
+        // we reset splitDetected and continue to see the final state of the word.
+        // But the prompt says "if we ."/?"/!" we should split there otherwise we should look to next".
+        // In the context of Reader.tsx, it's processing word by word.
+        // If a word ends a sentence, we split.
+        splitDetected = false; 
+    }
+  }
+
+  return { endsWithPunctuation: splitDetected, nextInQuotes: currentInQuotes };
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -105,6 +130,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
     const groups: { text: string; words: WordData[], isValid: boolean, backendSentenceText: string }[] = [];
     let currentWords: WordData[] = [];
+    let inQuotes = false;
     
     const normalizedSentences = (sentences || []).map((s: Sentence) => ({
       text: s.text,
@@ -124,7 +150,9 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     pageData.words.forEach((word, idx) => {
       currentWords.push(word);
       const trimmedText = word.text.replace(/\s+$/, '');
-      const endsWithPunctuation = endsWithSentencePunctuation(trimmedText, abbreviations);
+      const { endsWithPunctuation, nextInQuotes } = endsWithSentencePunctuation(trimmedText, abbreviations, inQuotes);
+      inQuotes = nextInQuotes;
+
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
         let processing = true;
         while (processing && currentWords.length > 0) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
-import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2 } from 'lucide-react';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw } from 'lucide-react';
 import { VocabReview } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
@@ -14,13 +14,16 @@ interface ReviewProps {
 
 const ClayWordCard = ({ 
   review,
-  index
+  index,
+  onRefresh
 }: { 
   review: VocabReview; 
   index: number;
+  onRefresh?: (vocabId: number, data: { meaning?: string; phonetic?: string; audio_url?: string }) => void;
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isAutoFlipped, setIsAutoFlipped] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
@@ -75,6 +78,31 @@ const ClayWordCard = ({
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     window.speechSynthesis.speak(utterance);
+  };
+
+  const handleRefresh = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const response = await api.get('/api/dict', {
+        params: {
+          word: review.word,
+          force_refresh: true,
+          skip_lemma: true,
+        },
+      });
+      const data = response.data;
+      onRefresh?.(review.vocab_id, {
+        meaning: data.meaning,
+        phonetic: data.phonetic,
+        audio_url: data.audio_url,
+      });
+    } catch (error) {
+      console.error('Error refreshing word:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Modern "Cool" palette for cards
@@ -162,6 +190,13 @@ const ClayWordCard = ({
           className="absolute inset-0 backface-hidden rounded-[32px] bg-white p-4 flex flex-col rotate-y-180 border-2 border-slate-100 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1),inset_0_4px_8px_rgba(255,255,255,1)] overflow-hidden"
           style={{ transform: 'rotateY(180deg)' }}
         >
+          <button
+            onClick={handleRefresh}
+            className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-indigo-50 text-indigo-500 hover:scale-110 active:scale-90 transition-all flex items-center justify-center shadow-sm border border-indigo-100 z-10"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
+
           <div className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
             <div className="text-center pt-1">
               <h4 className="text-lg font-black text-slate-800 leading-tight font-baloo">{review.word}</h4>
@@ -219,6 +254,14 @@ export default function Review({ onBack }: ReviewProps) {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const handleWordRefresh = useCallback((vocabId: number, data: { meaning?: string; phonetic?: string; audio_url?: string }) => {
+    setReviews(prev => prev.map(r => 
+      r.vocab_id === vocabId 
+        ? { ...r, meaning: data.meaning ?? r.meaning, phonetic: data.phonetic ?? r.phonetic, audio_url: data.audio_url ?? r.audio_url }
+        : r
+    ));
   }, []);
 
   useEffect(() => {
@@ -332,6 +375,7 @@ export default function Review({ onBack }: ReviewProps) {
                         <ClayWordCard 
                           review={review} 
                           index={originalIndex}
+                          onRefresh={handleWordRefresh}
                         />
                       </motion.div>
                     );
@@ -343,7 +387,7 @@ export default function Review({ onBack }: ReviewProps) {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 w-full">
               {reviews.map((review, idx) => (
                 <div key={review.vocab_id}>
-                  <ClayWordCard review={review} index={idx} />
+                  <ClayWordCard review={review} index={idx} onRefresh={handleWordRefresh} />
                 </div>
               ))}
             </div>

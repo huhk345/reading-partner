@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import shutil
 import os
-import re
 import json
 from typing import List, Optional
 import datetime
@@ -12,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from urllib.parse import quote
 from dotenv import load_dotenv
 import logging
+import threading
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -58,6 +58,22 @@ def log_activity(db: Session, event_type: str, book_id: int = None, word_count: 
     db.commit()
 
 init_db()
+
+def auto_generate_tts_task(sentences: List[str], book_id: int):
+    """Background task to generate TTS files for the first few sentences."""
+    count = min(len(sentences), 50)
+    logger.info(f"Auto-generating TTS for first {count} sentences of book {book_id}")
+    for i, s_text in enumerate(sentences[:count]):
+        if not s_text.strip():
+            continue
+        try:
+            # We don't provide prompt_wav_path/text here, it uses the default (Sulafat)
+            tts_engine.synthesize(s_text)
+            if (i + 1) % 10 == 0:
+                logger.info(f"Auto TTS progress for book {book_id}: {i + 1}/{count}")
+        except Exception as e:
+            logger.error(f"Auto TTS generation failed for sentence {i} of book {book_id}: {e}")
+    logger.info(f"Auto TTS generation completed for book {book_id}")
 
 def process_book_background(book_id: int):
     db = SessionLocal()
@@ -133,6 +149,14 @@ def process_book_background(book_id: int):
         book.progress = 1.0
         db.commit()
         logger.info(f"Successfully processed book {book_id}")
+
+        # Auto-generate TTS for first 50 sentences in the background if LLM extraction succeeded
+        if llm_info and sentences:
+            threading.Thread(
+                target=auto_generate_tts_task, 
+                args=(sentences, book_id), 
+                daemon=True
+            ).start()
     except Exception as e:
         logger.exception(f"Error processing book {book_id}")
         db.rollback()

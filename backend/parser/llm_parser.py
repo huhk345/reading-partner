@@ -82,15 +82,18 @@ def get_book_info_and_clean_text(text_sample):
 
 def split_sentences_regex(text):
     """
-    Splits text into sentences using regex based on '.', '?', '!' and other sentence-ending symbols.
-    Handles common abbreviations (Mrs., Mr., Ms., Dr., etc.) to avoid false splits.
+    Splits text into sentences using a stateful approach that respects quotes.
+    - Does not split inside quotes (e.g., "Sentence 1. Sentence 2.")
+    - Splits at ." or ?" or !" (e.g., "Hello." said John.)
+    - Splits at . or ? or ! outside of quotes.
+    - Handles common abbreviations to avoid false splits.
     """
     if not text:
         return []
-    
+
     # Pre-cleaning: replace multiple spaces and newlines
     text = re.sub(r'\s+', ' ', text).strip()
-    
+
     # Protect common abbreviations by replacing them temporarily
     abbreviations = [
         r'Mrs\.', r'Mr\.', r'Ms\.', r'Dr\.', r'Prof\.', r'Sr\.', r'Jr\.',
@@ -101,20 +104,55 @@ def split_sentences_regex(text):
         r'U\.S\.', r'U\.K\.', r'E\.U\.',
     ]
     abbreviation_pattern = '|'.join(abbreviations)
-    
-    # Replace abbreviations with a placeholder that won't be split on
     protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), text)
-    
-    # Split by '.', '?', '!' followed by space or end of string
-    # Also split on patterns like .” “ where closing quote + space + opening quote separates sentences
-    sentence_endings = r'(?<=[.!?…])(?:\s+|[”"]\s+[“"\'])'
-    sentences = re.split(sentence_endings, protected)
-    
-    # Restore the periods in abbreviations
-    sentences = [s.replace('\x00', '.') for s in sentences]
-    
-    return [s.strip() for s in sentences if s.strip()]
 
+    sentences = []
+    current = []
+    in_quotes = False
+    quote_chars = '"“”'
+
+    chars = list(protected)
+    i = 0
+    while i < len(chars):
+        c = chars[i]
+        current.append(c)
+
+        if c in quote_chars:
+            in_quotes = not in_quotes
+
+        should_split = False
+
+        # Rule: if we encounter ."/?"/!" we should split there
+        if c in '.!?…' and i + 1 < len(chars) and chars[i+1] in quote_chars:
+            # If we are in_quotes, then this next quote is likely closing
+            if in_quotes:
+                current.append(chars[i+1])
+                i += 1
+                in_quotes = not in_quotes # toggle back
+                should_split = True
+
+        # Rule: split outside quotes
+        elif c in '.!?…' and not in_quotes:
+            if i + 1 == len(chars) or chars[i+1].isspace():
+                should_split = True
+
+        if should_split:
+            s = "".join(current).replace('\x00', '.').strip()
+            if s:
+                sentences.append(s)
+            current = []
+            # consume trailing space
+            while i + 1 < len(chars) and chars[i+1].isspace():
+                i += 1
+
+        i += 1
+
+    if current:
+        s = "".join(current).replace('\x00', '.').strip()
+        if s:
+            sentences.append(s)
+
+    return sentences
 # Maintain compatibility with main.py for now
 def split_sentences_llm(text):
     """
