@@ -2,11 +2,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
-import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw } from 'lucide-react';
-import { VocabReview } from '../types';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy } from 'lucide-react';
+import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
 import WordMatchGame from './WordMatchGame';
+
+const MATCH_GAME_LEVELS: LevelConfig[] = [
+  { level: 1, difficulty: 'Easy',        timeLimit: 100, matchTarget: 15, mode: 'text' },
+  { level: 2, difficulty: 'Medium-Easy', timeLimit: 100, matchTarget: 25, mode: 'mixed', soundThreshold: calcSoundThreshold(25) },
+  { level: 3, difficulty: 'Medium',      timeLimit: 100, matchTarget: 35, mode: 'mixed', soundThreshold: calcSoundThreshold(35) },
+  { level: 4, difficulty: 'Medium-Hard', timeLimit: 100, matchTarget: 45, mode: 'mixed', soundThreshold: calcSoundThreshold(45) },
+  { level: 5, difficulty: 'Hard',        timeLimit: 100, matchTarget: 55, mode: 'mixed', soundThreshold: calcSoundThreshold(55) },
+];
 
 interface ReviewProps {
   onBack: () => void;
@@ -65,7 +73,10 @@ const ClayWordCard = ({
 
   const speak = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (review.audio_url) {
+    if (review.word_id) {
+      const audio = new Audio(`${api.defaults.baseURL}/api/audio/${review.word_id}`);
+      audio.play().catch(() => fallbackSpeak(review.word));
+    } else if (review.audio_url) {
       const audio = new Audio(review.audio_url);
       audio.play().catch(() => fallbackSpeak(review.word));
     } else {
@@ -200,7 +211,7 @@ const ClayWordCard = ({
           <div className="flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
             <div className="text-center pt-1">
               <h4 className="text-lg font-black text-slate-800 leading-tight font-baloo">{review.word}</h4>
-              <p className="text-indigo-400 font-bold text-[10px] uppercase tracking-widest">{review.phonetic}</p>
+              <p className="text-indigo-400">{review.phonetic}</p>
             </div>
             
             <div className="h-0.5 bg-gradient-to-r from-transparent via-slate-100 to-transparent w-full" />
@@ -240,6 +251,11 @@ export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'wall' | 'game'>('wall');
+  const [gameSession, setGameSession] = useState<GameSession>({
+    currentLevel: 1,
+    cumulativeScore: 0,
+    status: 'idle',
+  });
   const [columns, setColumns] = useState(2);
   const [mounted, setMounted] = useState(false);
   const fetchedRef = useRef(false);
@@ -323,7 +339,112 @@ export default function Review({ onBack }: ReviewProps) {
   }
 
   if (mode === 'game') {
-    return <WordMatchGame reviews={reviews} onBack={() => setMode('wall')} />;
+    const resetSession = () => {
+      setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'idle' });
+    };
+
+    const handleLevelComplete = (level: number, score: number, stats: LevelStats) => {
+      const newCumulative = gameSession.cumulativeScore + score;
+      setGameSession({
+        currentLevel: level,
+        cumulativeScore: newCumulative,
+        status: level >= 5 ? 'all-complete' : 'level-stats',
+        levelStats: stats,
+      });
+    };
+
+    if (gameSession.status === 'level-stats' && gameSession.levelStats) {
+      const stats = gameSession.levelStats;
+      const nextLevel = gameSession.currentLevel + 1;
+      return (
+        <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+          <div className="relative flex flex-col items-center gap-6 animate-in zoom-in-95 duration-500">
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+              className="w-28 h-28 rounded-[36px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-green-400 to-emerald-500"
+            >
+              <Trophy className="w-14 h-14" />
+            </motion.div>
+            <div className="text-center space-y-1">
+              <h2 className="text-3xl font-black text-slate-800">Level {gameSession.currentLevel} Complete!</h2>
+            </div>
+            <div className="flex gap-4 w-full max-w-sm">
+              <div className="flex-1 bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4 text-center">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Best Streak</p>
+                <p className="text-3xl font-black text-indigo-600">{stats.bestStreak}</p>
+                <p className="text-xs text-slate-400">连续答对</p>
+              </div>
+              <div className="flex-1 bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4 text-center">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Avg Speed</p>
+                <p className="text-3xl font-black text-indigo-600">{stats.avgSecondsPerMatch.toFixed(1)}s</p>
+                <p className="text-xs text-slate-400">每题用时</p>
+              </div>
+            </div>
+            <div className="text-sm text-slate-500 font-medium">
+              {stats.totalMatches} matches in {stats.timeUsed}s
+            </div>
+            <button
+              onClick={() => setGameSession(prev => ({ ...prev, currentLevel: nextLevel, status: 'playing' }))}
+              className="px-10 py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all"
+            >
+              Level {nextLevel} →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (gameSession.status === 'all-complete') {
+      const totalTarget = MATCH_GAME_LEVELS.reduce((sum, l) => sum + l.matchTarget, 0);
+      return (
+        <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+          <div className="relative flex flex-col items-center gap-8 animate-in zoom-in-95 duration-500">
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+              className="w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-green-400 to-emerald-500"
+            >
+              <Trophy className="w-16 h-16" />
+            </motion.div>
+            <div className="text-center space-y-2">
+              <h2 className="text-4xl font-black text-slate-800">All Levels Complete!</h2>
+              <p className="text-xl font-bold text-slate-500">
+                Total Score: {gameSession.cumulativeScore} / {totalTarget}
+              </p>
+            </div>
+            <button
+              onClick={() => { setMode('wall'); resetSession(); }}
+              className="px-8 py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all"
+            >
+              Return to Word Wall
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const cfg = MATCH_GAME_LEVELS[gameSession.currentLevel - 1];
+    return (
+      <WordMatchGame
+        key={gameSession.currentLevel}
+        reviews={reviews}
+        onBack={() => { setMode('wall'); resetSession(); }}
+        onLevelComplete={handleLevelComplete}
+        mode={cfg.mode}
+        level={cfg.level}
+        timeLimit={cfg.timeLimit}
+        matchTarget={cfg.matchTarget}
+        soundThreshold={cfg.soundThreshold}
+        cumulativeScore={gameSession.cumulativeScore}
+      />
+    );
   }
 
   return (
@@ -333,7 +454,10 @@ export default function Review({ onBack }: ReviewProps) {
           <motion.button
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            onClick={() => setMode('game')}
+            onClick={() => {
+              setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'playing' });
+              setMode('game');
+            }}
             className="px-5 py-2.5 rounded-2xl font-bold transition-all text-base bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 hover:scale-105 group"
           >
             <div className="flex items-center">

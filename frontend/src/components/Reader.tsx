@@ -768,7 +768,16 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   };
 
-  const speak = useCallback(async (text: string, audioUrl?: string, onComplete?: () => void) => {
+  const speak = useCallback(async (text: string, wordId?: number, audioUrl?: string, onComplete?: () => void) => {
+    if (wordId) {
+      const audio = new Audio(`${api.defaults.baseURL}/api/audio/${wordId}`);
+      audio.play().catch(e => {
+        console.error("Error playing word audio API, falling back to synthesis", e);
+        fallbackSpeak(text, onComplete);
+      });
+      audio.onended = () => onComplete?.();
+      return;
+    }
     if (audioUrl) {
       const audio = new Audio(audioUrl);
       audio.play().catch(e => {
@@ -820,7 +829,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
       // Auto-play audio on first lookup or forced refresh
       if ((!skipLemma || forceRefresh) && response.data.audio_url) {
         hasAutoPlayedRef.current = true;
-        speak(response.data.word, response.data.audio_url);
+        speak(response.data.word, response.data.id, response.data.audio_url);
       }
     } catch (error) {
       console.error('Error fetching word:', error);
@@ -877,7 +886,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const handleSentencePlay = async (sentenceText: string) => {
     setCurrentlyPlayingSentence(sentenceText);
     try {
-      await speak(sentenceText, undefined, () => {
+      await speak(sentenceText, undefined, undefined, () => {
         setCurrentlyPlayingSentence(null);
       });
     } catch (error) {
@@ -1242,7 +1251,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                         <button
                           onClick={() => {
                             setIsReadingWord(true);
-                            speak(selectedWord?.word || '', selectedWord?.audio_url, () => setIsReadingWord(false));
+                            speak(selectedWord?.word || '', selectedWord?.id, selectedWord?.audio_url, () => setIsReadingWord(false));
                           }}
                           disabled={isReadingWord}
                           className="w-10 h-10 clay-card bg-blue-50 text-blue-600 flex items-center justify-center hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"

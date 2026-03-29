@@ -68,3 +68,30 @@ export interface StreakInfo {
   current_streak: number;
   longest_streak: number;
 }
+
+export type LevelConfig = {
+  level: number;
+  difficulty: string;
+  timeLimit: number;
+  matchTarget: number;
+  mode: 'text' | 'mixed';
+  soundThreshold?: number;
+};
+
+export type LevelStats = {
+  bestStreak: number;
+  avgSecondsPerMatch: number;
+  totalMatches: number;
+  timeUsed: number;
+};
+
+export type GameSession = {
+  currentLevel: number;
+  cumulativeScore: number;
+  status: 'idle' | 'playing' | 'level-stats' | 'game-over' | 'all-complete';
+  levelStats?: LevelStats;
+};
+
+export function calcSoundThreshold(matchTarget: number): number {
+  return matchTarget - Math.ceil(matchTarget * 0.4);
+}

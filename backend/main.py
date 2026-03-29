@@ -1,10 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import shutil
 import os
 import json
+import requests
 from typing import List, Optional
 import datetime
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +52,10 @@ TTS_DIR = "uploads/tts"
 if not os.path.exists(TTS_DIR):
     os.makedirs(TTS_DIR)
 app.mount("/tts", StaticFiles(directory=TTS_DIR), name="tts")
+
+WORD_AUDIO_DIR = "uploads/audio"
+if not os.path.exists(WORD_AUDIO_DIR):
+    os.makedirs(WORD_AUDIO_DIR)
 
 def log_activity(db: Session, event_type: str, book_id: int = None, word_count: int = 1):
     today = datetime.date.today().isoformat()
@@ -280,6 +286,41 @@ def get_book_status(book_id: int, db: Session = Depends(get_db)):
         "error_message": book.error_message
     }
 
+
+@app.get("/api/audio/{word_id}")
+async def get_word_audio(word_id: int, db: Session = Depends(get_db)):
+    db_word = db.query(Word).filter(Word.id == word_id).first()
+    if not db_word:
+        raise HTTPException(status_code=404, detail="Word not found")
+    
+    audio_filename = f"{word_id}.mp3"
+    audio_path = os.path.join(WORD_AUDIO_DIR, audio_filename)
+    
+    if os.path.exists(audio_path):
+        return FileResponse(audio_path)
+    
+    # Try to download from audio_url if available
+    if db_word.audio_url:
+        try:
+            response = requests.get(db_word.audio_url, timeout=5)
+            if response.status_code == 200:
+                with open(audio_path, "wb") as f:
+                    f.write(response.content)
+                return FileResponse(audio_path)
+        except Exception as e:
+            logger.error(f"Failed to download audio for word {db_word.word}: {e}")
+            
+    # Fallback to TTS
+    try:
+        # Use light_tts_engine for single words
+        generated_path = light_tts_engine.synthesize(db_word.word)
+        if os.path.exists(generated_path):
+            shutil.copy(generated_path, audio_path)
+            return FileResponse(audio_path)
+    except Exception as e:
+        logger.error(f"TTS fallback failed for word {db_word.word}: {e}")
+        
+    raise HTTPException(status_code=404, detail="Audio not found and TTS failed")
 
 @app.get("/api/dict")
 def get_definition(word: str, book_id: Optional[int] = None, sentence_id: Optional[int] = None, skip_lemma: bool = False, force_refresh: bool = False, db: Session = Depends(get_db)):
