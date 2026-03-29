@@ -184,8 +184,15 @@ const slotBase =
 function slotClass(
   state: SlotData['state'],
   isSelected: boolean,
-  lang: 'en' | 'zh'
+  lang: 'en' | 'zh',
+  isDisabled?: boolean
 ) {
+  if (isDisabled) {
+    return cn(
+      slotBase,
+      'bg-slate-200/50 border-slate-300/50 text-slate-400/70 shadow-none cursor-default'
+    );
+  }
   if (state === 'correct') {
     return cn(
       slotBase,
@@ -353,7 +360,9 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
               return;
             }
 
-            if (queueRef.current.length > 0) {
+            const remainingToMatch = maxScore - newScore;
+
+            if (remainingToMatch >= 5 && queueRef.current.length > 0) {
               const nextReview = queueRef.current[0];
               const restQueue = queueRef.current.slice(1);
               queueRef.current = restQueue;
@@ -605,9 +614,9 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
                     slotClass(
                       slot.state,
                       selectedLeft === index,
-                      'en'
-                    ),
-                    isDisabled && 'grayscale pointer-events-none cursor-default'
+                      'en',
+                      isDisabled
+                    )
                   )}
                 >
                   {(mode === 'audio' || (mode === 'mixed' && slot.isSound)) ? (
@@ -657,9 +666,9 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
                     slotClass(
                       slot.state,
                       selectedRight === index,
-                      'zh'
-                    ),
-                    isDisabled && 'grayscale pointer-events-none cursor-default'
+                      'zh',
+                      isDisabled
+                    )
                   )}
                 >
                   {slot.text}

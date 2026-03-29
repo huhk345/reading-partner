@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
-import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy } from 'lucide-react';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy, Play } from 'lucide-react';
 import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
@@ -70,6 +70,20 @@ const ClayWordCard = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isAutoFlipped && review.word) {
+      if (review.word_id) {
+        const audio = new Audio(`${api.defaults.baseURL}/api/audio/${review.word_id}`);
+        audio.play().catch(() => fallbackSpeak(review.word));
+      } else if (review.audio_url) {
+        const audio = new Audio(review.audio_url);
+        audio.play().catch(() => fallbackSpeak(review.word));
+      } else {
+        fallbackSpeak(review.word);
+      }
+    }
+  }, [isAutoFlipped]);
 
   const speak = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -179,6 +193,12 @@ const ClayWordCard = ({
           
           <button
             onClick={speak}
+            onMouseEnter={() => {
+              if (hoverTimerRef.current) {
+                clearTimeout(hoverTimerRef.current);
+                hoverTimerRef.current = null;
+              }
+            }}
             className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-white/80 text-indigo-500 hover:scale-110 active:scale-90 transition-all flex items-center justify-center shadow-sm border border-white/50 z-10"
           >
             <Volume2 className="w-4 h-4" />
@@ -356,43 +376,124 @@ export default function Review({ onBack }: ReviewProps) {
     if (gameSession.status === 'level-stats' && gameSession.levelStats) {
       const stats = gameSession.levelStats;
       const nextLevel = gameSession.currentLevel + 1;
+      const totalLevels = MATCH_GAME_LEVELS.length;
+      const currentLevelNum = gameSession.currentLevel;
+      const levelsRemaining = totalLevels - currentLevelNum;
+      const progressPercent = (currentLevelNum / totalLevels) * 100;
+      
       return (
         <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
-          <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+          <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gradient-radial from-indigo-100/50 to-transparent rounded-full pointer-events-none" />
+          
           <div className="relative flex flex-col items-center gap-6 animate-in zoom-in-95 duration-500">
             <motion.div
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-              className="w-28 h-28 rounded-[36px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-green-400 to-emerald-500"
+              className="relative"
             >
-              <Trophy className="w-14 h-14" />
+              <div className="w-28 h-28 rounded-[36px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-green-400 to-emerald-500">
+                <Trophy className="w-14 h-14" />
+              </div>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.3, type: 'spring' }}
+                className="absolute -top-2 -right-2 w-10 h-10 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg"
+              >
+                <Sparkles className="w-5 h-5 text-white" />
+              </motion.div>
             </motion.div>
+            
             <div className="text-center space-y-1">
-              <h2 className="text-3xl font-black text-slate-800">Level {gameSession.currentLevel} Complete!</h2>
+              <h2 className="text-3xl font-black text-slate-800">Level {currentLevelNum} Complete!</h2>
+              <p className="text-base font-medium text-slate-500">
+                {levelsRemaining > 0 ? `${levelsRemaining} more level${levelsRemaining > 1 ? 's' : ''} to go!` : 'All levels completed!'}
+              </p>
             </div>
-            <div className="flex gap-4 w-full max-w-sm">
-              <div className="flex-1 bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4 text-center">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Best Streak</p>
-                <p className="text-3xl font-black text-indigo-600">{stats.bestStreak}</p>
-                <p className="text-xs text-slate-400">连续答对</p>
+            
+            <div className="w-full max-w-sm">
+              <div className="flex items-center justify-between">
+                {Array.from({ length: totalLevels }, (_, i) => i + 1).map((level, index) => (
+                  <div key={level} className="flex items-center">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.3 + index * 0.1 }}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                        level <= currentLevelNum
+                          ? 'bg-gradient-to-r from-green-400 to-emerald-500 text-white shadow-lg shadow-green-200'
+                          : 'bg-slate-200 text-slate-400'
+                      }`}
+                    >
+                      {level <= currentLevelNum ? (
+                        <Check className="w-4 h-4" />
+                      ) : (
+                        level
+                      )}
+                    </motion.div>
+                    {index < totalLevels - 1 && (
+                      <div className={`w-8 h-1 mx-1 rounded ${level < currentLevelNum ? 'bg-green-400' : 'bg-slate-200'}`} />
+                    )}
+                  </div>
+                ))}
               </div>
-              <div className="flex-1 bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4 text-center">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Avg Speed</p>
-                <p className="text-3xl font-black text-indigo-600">{stats.avgSecondsPerMatch.toFixed(1)}s</p>
-                <p className="text-xs text-slate-400">每题用时</p>
-              </div>
+              <p className="text-center text-xs font-semibold text-slate-400 mt-2">
+                {currentLevelNum} / {totalLevels} completed
+              </p>
             </div>
-            <div className="text-sm text-slate-500 font-medium">
-              {stats.totalMatches} matches in {stats.timeUsed}s
+            
+            <div className="flex gap-4 w-full max-w-md">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 25 }}
+                className="flex-1 rounded-2xl bg-white/20 backdrop-blur-2xl border border-white/30 shadow-[0_8px_32px_rgba(99,102,241,0.15),inset_0_1px_0_rgba(255,255,255,0.4)] p-4 text-center flex flex-col justify-center relative overflow-hidden hover:scale-[1.02] hover:-translate-y-1 transition-all duration-150 ease-out cursor-default"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-indigo-500/10" />
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1 whitespace-nowrap">Best Streak</p>
+                <p className="text-3xl font-black text-indigo-700 leading-none">{stats.bestStreak}</p>
+                <p className="text-xs text-indigo-500 mt-1">consecutive</p>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, type: 'spring', stiffness: 300, damping: 25 }}
+                className="flex-1 rounded-2xl bg-white/20 backdrop-blur-2xl border border-white/30 shadow-[0_8px_32px_rgba(16,185,129,0.15),inset_0_1px_0_rgba(255,255,255,0.4)] p-4 text-center flex flex-col justify-center relative overflow-hidden hover:scale-[1.02] hover:-translate-y-1 transition-all duration-150 ease-out cursor-default"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-emerald-500/10" />
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1 whitespace-nowrap">Avg Speed</p>
+                <p className="text-3xl font-black text-emerald-700 leading-none">{stats.avgSecondsPerMatch.toFixed(1)}s</p>
+                <p className="text-xs text-emerald-500 mt-1">per match</p>
+              </motion.div>
             </div>
-            <button
-              onClick={() => setGameSession(prev => ({ ...prev, currentLevel: nextLevel, status: 'playing' }))}
-              className="px-10 py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all"
+            
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-sm text-slate-500 font-medium"
             >
-              Level {nextLevel} →
-            </button>
+              {stats.totalMatches} matches in {stats.timeUsed}s
+            </motion.div>
+            
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 25 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setGameSession(prev => ({ ...prev, currentLevel: nextLevel, status: 'playing' }))}
+              className="px-8 py-3 rounded-2xl font-bold text-base bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all duration-150 ease-out group"
+            >
+              <div className="flex items-center">
+                <Play className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-150" />
+                <span>Level {nextLevel}</span>
+              </div>
+            </motion.button>
           </div>
         </div>
       );
@@ -400,31 +501,118 @@ export default function Review({ onBack }: ReviewProps) {
 
     if (gameSession.status === 'all-complete') {
       const totalTarget = MATCH_GAME_LEVELS.reduce((sum, l) => sum + l.matchTarget, 0);
+      const totalLevels = MATCH_GAME_LEVELS.length;
+      const scorePercent = Math.min((gameSession.cumulativeScore / totalTarget) * 100, 100);
+      
       return (
         <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
-          <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+          <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-green-200 rounded-full blur-3xl opacity-50 animate-levitate pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-blue-200 rounded-full blur-3xl opacity-50 animate-levitate delay-200 pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-amber-100/60 to-transparent rounded-full pointer-events-none" />
+          
           <div className="relative flex flex-col items-center gap-8 animate-in zoom-in-95 duration-500">
             <motion.div
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-              className="w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-green-400 to-emerald-500"
+              className="relative"
             >
-              <Trophy className="w-16 h-16" />
+              <div className="w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500">
+                <Trophy className="w-16 h-16" />
+              </div>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.4, type: 'spring' }}
+                className="absolute -top-3 -right-3"
+              >
+                <div className="relative">
+                  <div className="w-12 h-12 bg-gradient-to-r from-yellow-300 to-amber-400 rounded-full flex items-center justify-center shadow-lg">
+                    <Sparkles className="w-6 h-6 text-white" />
+                  </div>
+                  <motion.div
+                    animate={{ scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                    className="absolute inset-0 bg-yellow-300 rounded-full blur-md"
+                  />
+                </div>
+              </motion.div>
             </motion.div>
-            <div className="text-center space-y-2">
-              <h2 className="text-4xl font-black text-slate-800">All Levels Complete!</h2>
-              <p className="text-xl font-bold text-slate-500">
-                Total Score: {gameSession.cumulativeScore} / {totalTarget}
-              </p>
+            
+            <div className="text-center space-y-3">
+              <motion.h2
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="text-4xl font-black text-slate-800"
+              >
+                All Levels Complete!
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="text-xl font-bold text-slate-500"
+              >
+                Final Score: {gameSession.cumulativeScore} / {totalTarget}
+              </motion.p>
             </div>
-            <button
-              onClick={() => { setMode('wall'); resetSession(); }}
-              className="px-8 py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all"
+            
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="w-full max-w-sm"
             >
-              Return to Word Wall
-            </button>
+              <div className="flex justify-between text-xs font-semibold text-slate-400 mb-2">
+                <span>All {totalLevels} Levels</span>
+                <span>{Math.round(scorePercent)}%</span>
+              </div>
+              <div className="h-4 bg-slate-200 rounded-full overflow-hidden shadow-inner">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${scorePercent}%` }}
+                  transition={{ delay: 0.5, duration: 0.8, ease: 'easeOut' }}
+                  className="h-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 rounded-full relative"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent" />
+                  <motion.div
+                    animate={{ x: ['-100%', '100%'] }}
+                    transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12"
+                  />
+                </motion.div>
+              </div>
+            </motion.div>
+            
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="flex gap-6"
+            >
+              <div className="flex items-center gap-2 text-slate-500">
+                <Target className="w-5 h-5 text-indigo-500" />
+                <span className="font-medium">{totalLevels} Levels</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-500">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span className="font-medium">{gameSession.cumulativeScore} Points</span>
+              </div>
+            </motion.div>
+            
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => { setMode('wall'); resetSession(); }}
+              className="px-8 py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 transition-all relative overflow-hidden group"
+            >
+              <span className="relative z-10">Return to Word Wall</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </motion.button>
           </div>
         </div>
       );
