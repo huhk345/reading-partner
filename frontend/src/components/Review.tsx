@@ -83,7 +83,7 @@ const ClayWordCard = ({
         fallbackSpeak(review.word);
       }
     }
-  }, [isAutoFlipped]);
+  }, [isAutoFlipped, review.word, review.audio_url, review.word_id]);
 
   const speak = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -379,7 +379,6 @@ export default function Review({ onBack }: ReviewProps) {
       const totalLevels = MATCH_GAME_LEVELS.length;
       const currentLevelNum = gameSession.currentLevel;
       const levelsRemaining = totalLevels - currentLevelNum;
-      const progressPercent = (currentLevelNum / totalLevels) * 100;
       
       return (
         <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
