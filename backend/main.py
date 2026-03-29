@@ -28,7 +28,7 @@ from parser.ocr_corrector import correct_ocr_errors
 from dictionary.lookup import lookup_word
 from dictionary.lemmatize import get_lemma
 from srs.sm2 import update_sm2
-from tts.generate import tts_engine
+from tts.generate import tts_engine, light_tts_engine
 
 app = FastAPI(title="Reading Partner API")
 
@@ -445,6 +445,16 @@ def generate_tts(text: str, prompt_wav_path: Optional[str] = None, prompt_text: 
     except Exception as e:
         logger.exception(f"TTS generation failed for text: {text[:100]}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+@app.post("/api/tts/light")
+def generate_tts_light(text: str):
+    try:
+        audio_path = light_tts_engine.synthesize(text)
+        audio_filename = os.path.basename(audio_path)
+        return {"audio_url": f"http://localhost:8000/tts/{audio_filename}"}
+    except Exception as e:
+        logger.exception(f"Light TTS generation failed for text: {text[:100]}")
+        raise HTTPException(status_code=500, detail=f"Light TTS generation failed: {str(e)}")
 
 @app.get("/api/activity")
 def get_activity(year: Optional[int] = None, month: Optional[int] = None, db: Session = Depends(get_db)):

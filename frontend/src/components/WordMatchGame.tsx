@@ -48,7 +48,9 @@ async function speakWord(word: string, audio_url?: string) {
     if (success) return;
   }
   try {
-    const res = await api.post('/api/tts/light', { text: word });
+    const res = await api.post('/api/tts/light', null, {
+      params: { text: word },
+    });
     if (res.data.audio_url) {
       await playAudio(res.data.audio_url);
     }
