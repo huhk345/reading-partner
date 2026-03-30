@@ -199,6 +199,7 @@ const ClayWordCard = ({
                 hoverTimerRef.current = null;
               }
             }}
+            onMouseLeave={handleMouseEnter}
             className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-white/80 text-indigo-500 hover:scale-110 active:scale-90 transition-all flex items-center justify-center shadow-sm border border-white/50 z-10"
           >
             <Volume2 className="w-4 h-4" />
