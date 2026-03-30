@@ -640,6 +640,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [renderedPages, setRenderedPages] = useState<Record<number, { width: number, height: number }>>({});
   const [reparsing, setReparsing] = useState(false);
   const [isReadingWord, setIsReadingWord] = useState(false);
+  const [isAddingToVocab, setIsAddingToVocab] = useState(false);
   const [currentlyPlayingSentence, setCurrentlyPlayingSentence] = useState<string | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -896,7 +897,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   };
 
   const addToVocab = async () => {
-    if (!selectedWord || !selectedWord.id) return;
+    if (!selectedWord || !selectedWord.id || isAddingToVocab) return;
+    setIsAddingToVocab(true);
     try {
       const params: Record<string, string | number> = { word_id: selectedWord.id };
       if (lastSentenceId) params.sentence_id = lastSentenceId;
@@ -908,6 +910,8 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
       setSelectedWord(null);
     } catch (error) {
       console.error('Error adding to vocab:', error);
+    } finally {
+      setIsAddingToVocab(false);
     }
   };
 
@@ -1324,11 +1328,15 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                       ) : (
                         <button
                           onClick={addToVocab}
-                          disabled={!selectedWord?.id}
+                          disabled={!selectedWord?.id || isAddingToVocab}
                           className="px-5 py-2.5 rounded-2xl font-bold transition-all text-sm bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 w-full py-4 text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Plus className="w-6 h-6" />
-                          Add to My Word Bank
+                          {isAddingToVocab ? (
+                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Plus className="w-6 h-6" />
+                          )}
+                          {isAddingToVocab ? 'Adding...' : 'Add to My Word Bank'}
                         </button>
                       )}
                     </motion.div>
