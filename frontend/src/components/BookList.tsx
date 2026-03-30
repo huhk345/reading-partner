@@ -14,9 +14,10 @@ import {
 
 interface BookListProps {
   onSelectBook: (bookId: number) => void;
+  onBooksLoaded?: (count: number) => void;
 }
 
-export default function BookList({ onSelectBook }: BookListProps) {
+export default function BookList({ onSelectBook, onBooksLoaded }: BookListProps) {
   const [books, setBooks] = useState<Book[]>([]);
   const [uploading, setUploading] = useState(false);
   const isFetchingRef = useRef(false);
@@ -37,6 +38,7 @@ export default function BookList({ onSelectBook }: BookListProps) {
     try {
       const response = await api.get('/api/books');
       setBooks(response.data);
+      onBooksLoaded?.(response.data.length);
     } catch (error) {
       console.error('Error fetching books:', error);
     } finally {

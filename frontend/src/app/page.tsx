@@ -12,6 +12,7 @@ import { ArrowLeft, GraduationCap, BookOpen, Trophy } from 'lucide-react';
 export default function Home() {
   const [view, setView] = useState<'library' | 'reader' | 'review' | 'calendar'>('library');
   const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
+  const [bookCount, setBookCount] = useState(0);
 
   const handleSelectBook = (id: number) => {
     setSelectedBookId(id);
@@ -87,10 +88,10 @@ export default function Home() {
             <Title 
               title="My Magic Library" 
               subtitle="Pick a book and start your adventure!"
-              badge={{ icon: <Trophy className="w-5 h-5 text-white" />, text: "Keep your streak going!" }}
+              badge={{ icon: <Trophy className="w-5 h-5 text-white" />, text: `${bookCount} book${bookCount !== 1 ? 's' : ''} in library` }}
             />
             
-            <BookList onSelectBook={handleSelectBook} />
+            <BookList onSelectBook={handleSelectBook} onBooksLoaded={setBookCount} />
             
             <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-20">
               <button
