@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api, apiUrl } from '../lib/api';
 import { Book as BookIcon, Plus, RefreshCw } from 'lucide-react';
 import { Book } from '../types';
@@ -32,7 +32,7 @@ export default function BookList({ onSelectBook, onBooksLoaded }: BookListProps)
     description: '',
   });
 
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     try {
@@ -44,13 +44,13 @@ export default function BookList({ onSelectBook, onBooksLoaded }: BookListProps)
     } finally {
       isFetchingRef.current = false;
     }
-  };
+  }, [onBooksLoaded]);
 
   useEffect(() => {
     if (fetchedOnMountRef.current) return;
     fetchBooks();
     fetchedOnMountRef.current = true;
-  }, []);
+  }, [fetchBooks]);
 
   // Poll for books that are still processing
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function BookList({ onSelectBook, onBooksLoaded }: BookListProps)
     }, 2000); // Poll every 2 seconds
 
     return () => clearInterval(interval);
-  }, [books]);
+  }, [books, fetchBooks]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

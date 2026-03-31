@@ -296,12 +296,12 @@ export default function WordCompletionGame({
                 setGameOver(null);
                 initWord(shuffledReviews[0]);
               }}
-              className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="clay-button clay-primary w-full py-4 text-lg shadow-xl flex items-center justify-center gap-2"
             >
               <Gamepad2 className="w-6 h-6" />
               <span>Retry Level {level}</span>
             </button>
-            <button onClick={onBack} className="w-full py-4 rounded-2xl font-bold text-lg border-2 border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-500 transition-all">
+            <button onClick={onBack} className="clay-button clay-secondary w-full py-4 text-lg shadow-xl">
               Quit Game
             </button>
           </div>
