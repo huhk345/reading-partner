@@ -7,6 +7,7 @@ import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats }
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
 import WordMatchGame from './WordMatchGame';
+import WordCompletionGame from './WordCompletionGame';
 
 const MATCH_GAME_LEVELS: LevelConfig[] = [
   { level: 1, difficulty: 'Easy',        timeLimit: 100, matchTarget: 15, mode: 'text' },
@@ -14,6 +15,14 @@ const MATCH_GAME_LEVELS: LevelConfig[] = [
   { level: 3, difficulty: 'Medium',      timeLimit: 100, matchTarget: 35, mode: 'mixed', soundThreshold: calcSoundThreshold(35) },
   { level: 4, difficulty: 'Medium-Hard', timeLimit: 100, matchTarget: 45, mode: 'mixed', soundThreshold: calcSoundThreshold(45) },
   { level: 5, difficulty: 'Hard',        timeLimit: 100, matchTarget: 55, mode: 'mixed', soundThreshold: calcSoundThreshold(55) },
+];
+
+const COMPLETION_GAME_LEVELS: LevelConfig[] = [
+  { level: 1, difficulty: 'Easy',        timeLimit: 60, matchTarget: 5,  mode: 'text' },
+  { level: 2, difficulty: 'Medium-Easy', timeLimit: 60, matchTarget: 8,  mode: 'text' },
+  { level: 3, difficulty: 'Medium',      timeLimit: 60, matchTarget: 12, mode: 'text' },
+  { level: 4, difficulty: 'Medium-Hard', timeLimit: 60, matchTarget: 10, mode: 'mixed' }, // mixed here means sound mode level >= 4 in component
+  { level: 5, difficulty: 'Hard',        timeLimit: 60, matchTarget: 15, mode: 'mixed' },
 ];
 
 interface ReviewProps {
@@ -397,23 +406,26 @@ export default function Review({ onBack }: ReviewProps) {
 
   if (mode === 'game') {
     const resetSession = () => {
-      setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'idle' });
+      setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'idle', gameType: undefined });
     };
 
     const handleLevelComplete = (level: number, score: number, stats: LevelStats) => {
       const newCumulative = gameSession.cumulativeScore + score;
-      setGameSession({
+      setGameSession(prev => ({
+        ...prev,
         currentLevel: level,
         cumulativeScore: newCumulative,
         status: level >= 5 ? 'all-complete' : 'level-stats',
         levelStats: stats,
-      });
+      }));
     };
+
+    const levels = gameSession.gameType === 'match' ? MATCH_GAME_LEVELS : COMPLETION_GAME_LEVELS;
 
     if (gameSession.status === 'level-stats' && gameSession.levelStats) {
       const stats = gameSession.levelStats;
       const nextLevel = gameSession.currentLevel + 1;
-      const totalLevels = MATCH_GAME_LEVELS.length;
+      const totalLevels = levels.length;
       const currentLevelNum = gameSession.currentLevel;
       const levelsRemaining = totalLevels - currentLevelNum;
       
@@ -523,7 +535,7 @@ export default function Review({ onBack }: ReviewProps) {
               transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 25 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setGameSession(prev => ({ ...prev, currentLevel: nextLevel, status: 'playing' }))}
-              className="px-8 py-3 rounded-2xl font-bold text-base bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all duration-150 ease-out group"
+              className="clay-button clay-primary px-8 py-3 text-base group"
             >
               <div className="flex items-center">
                 <Play className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-150" />
@@ -536,8 +548,8 @@ export default function Review({ onBack }: ReviewProps) {
     }
 
     if (gameSession.status === 'all-complete') {
-      const totalTarget = MATCH_GAME_LEVELS.reduce((sum, l) => sum + l.matchTarget, 0);
-      const totalLevels = MATCH_GAME_LEVELS.length;
+      const totalTarget = levels.reduce((sum, l) => sum + l.matchTarget, 0);
+      const totalLevels = levels.length;
       const scorePercent = Math.min((gameSession.cumulativeScore / totalTarget) * 100, 100);
       
       return (
@@ -654,21 +666,36 @@ export default function Review({ onBack }: ReviewProps) {
       );
     }
 
-    const cfg = MATCH_GAME_LEVELS[gameSession.currentLevel - 1];
-    return (
-      <WordMatchGame
-        key={gameSession.currentLevel}
-        reviews={reviews}
-        onBack={() => { setMode('wall'); resetSession(); }}
-        onLevelComplete={handleLevelComplete}
-        mode={cfg.mode}
-        level={cfg.level}
-        timeLimit={cfg.timeLimit}
-        matchTarget={cfg.matchTarget}
-        soundThreshold={cfg.soundThreshold}
-        cumulativeScore={gameSession.cumulativeScore}
-      />
-    );
+    const cfg = levels[gameSession.currentLevel - 1];
+    if (gameSession.gameType === 'match') {
+      return (
+        <WordMatchGame
+          key={`match-${gameSession.currentLevel}`}
+          reviews={reviews}
+          onBack={() => { setMode('wall'); resetSession(); }}
+          onLevelComplete={handleLevelComplete}
+          mode={cfg.mode}
+          level={cfg.level}
+          timeLimit={cfg.timeLimit}
+          matchTarget={cfg.matchTarget}
+          soundThreshold={cfg.soundThreshold}
+          cumulativeScore={gameSession.cumulativeScore}
+        />
+      );
+    } else {
+      return (
+        <WordCompletionGame
+          key={`completion-${gameSession.currentLevel}`}
+          reviews={reviews}
+          onBack={() => { setMode('wall'); resetSession(); }}
+          onLevelComplete={handleLevelComplete}
+          level={cfg.level}
+          timeLimit={cfg.timeLimit}
+          matchTarget={cfg.matchTarget}
+          cumulativeScore={gameSession.cumulativeScore}
+        />
+      );
+    }
   }
 
   return (
@@ -679,14 +706,30 @@ export default function Review({ onBack }: ReviewProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             onClick={() => {
-              setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'playing' });
+              setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'playing', gameType: 'match' });
               setMode('game');
             }}
-            className="px-5 py-2.5 rounded-2xl font-bold transition-all text-base bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 hover:scale-105 group"
+            className="clay-button clay-primary px-5 py-2.5 text-base group"
           >
             <div className="flex items-center">
               <Gamepad2 className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
               <span>Play Match Game</span>
+            </div>
+          </motion.button>
+
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            onClick={() => {
+              setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'playing', gameType: 'completion' });
+              setMode('game');
+            }}
+            className="clay-button clay-secondary px-5 py-2.5 text-base group"
+          >
+            <div className="flex items-center">
+              <Sparkles className="w-7 h-7 mr-2 group-hover:rotate-12 group-hover:scale-125 transition-transform" />
+              <span>Fill-in-Word Game</span>
             </div>
           </motion.button>
         </div>

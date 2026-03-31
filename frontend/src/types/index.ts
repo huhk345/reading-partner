@@ -89,6 +89,7 @@ export type GameSession = {
   currentLevel: number;
   cumulativeScore: number;
   status: 'idle' | 'playing' | 'level-stats' | 'game-over' | 'all-complete';
+  gameType?: 'match' | 'completion';
   levelStats?: LevelStats;
 };
 

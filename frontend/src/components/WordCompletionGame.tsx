@@ -1,0 +1,433 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { api } from '../lib/api';
+import { VocabReview, LevelStats } from '../types';
+import { cn, extractShortMeaning } from '../lib/utils';
+import { Timer, Trophy, X, Gamepad2, Volume2 } from 'lucide-react';
+
+interface WordCompletionGameProps {
+  reviews: VocabReview[];
+  onBack: () => void;
+  onLevelComplete?: (level: number, score: number, stats: LevelStats) => void;
+  level?: number;
+  timeLimit?: number;
+  matchTarget?: number;
+  cumulativeScore?: number;
+}
+
+// Audio feedback using Web Audio API
+const playFeedback = (type: 'correct' | 'wrong') => {
+  try {
+    const ctx = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'correct') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    }
+  } catch (e) {
+    console.warn('Audio feedback failed', e);
+  }
+};
+
+function fallbackSpeak(text: string) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.speak(utterance);
+}
+
+async function speakWord(word: string, wordId?: number, audio_url?: string, onStart?: () => void, onEnd?: () => void) {
+  const playAudio = (url: string) => {
+    return new Promise<boolean>((resolve) => {
+      const audio = new Audio(url);
+      onStart?.();
+      audio.onended = () => {
+        onEnd?.();
+        resolve(true);
+      };
+      audio.onerror = () => {
+        onEnd?.();
+        resolve(false);
+      };
+      audio.play().catch(() => {
+        onEnd?.();
+        resolve(false);
+      });
+      // Safety timeout
+      setTimeout(() => {
+        onEnd?.();
+        resolve(false);
+      }, 5000);
+    });
+  };
+
+  if (wordId) {
+    const success = await playAudio(`${api.defaults.baseURL}/api/audio/${wordId}`);
+    if (success) return;
+  }
+
+  if (audio_url) {
+    const success = await playAudio(audio_url);
+    if (success) return;
+  }
+  try {
+    const res = await api.post('/api/tts/light', null, {
+      params: { text: word },
+    });
+    if (res.data.audio_url) {
+      await playAudio(res.data.audio_url);
+    } else {
+      fallbackSpeak(word);
+    }
+  } catch {
+    fallbackSpeak(word);
+  }
+}
+
+function getBlanksForWord(word: string, count: number): number[] {
+  const letters = word.split('').map((char, index) => ({ char, index })).filter(item => /[a-zA-Z]/.test(item.char));
+  if (letters.length === 0) return [];
+  
+  const actualCount = Math.min(count, Math.max(1, letters.length - 1));
+  
+  const shuffled = letters.sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, actualCount).map(item => item.index).sort((a, b) => a - b);
+}
+
+function getOptionsForBlank(correctLetter: string, count: number): string[] {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+  const options = [correctLetter.toLowerCase()];
+  while (options.length < count) {
+    const randomLetter = alphabet[Math.floor(Math.random() * 26)];
+    if (!options.includes(randomLetter)) {
+      options.push(randomLetter);
+    }
+  }
+  return options.sort(() => Math.random() - 0.5);
+}
+
+export default function WordCompletionGame({ 
+  reviews, 
+  onBack, 
+  onLevelComplete, 
+  level = 1, 
+  timeLimit = 60, 
+  matchTarget = 5,
+  cumulativeScore = 0 
+}: WordCompletionGameProps) {
+  
+  // Level Config
+  const blanksPerWord = level === 1 ? 1 : level === 2 ? 2 : (level >= 3 ? 3 : 2);
+  const optionsCount = level >= 5 ? 3 : 2;
+  const isSoundMode = level >= 4;
+
+  const buildInitial = useCallback(() => {
+    const valid = reviews.filter(r => r.word && r.word.length > 1 && /[a-zA-Z]/.test(r.word));
+    const shuffled = [...valid].sort(() => Math.random() - 0.5);
+    let initialBlanks: number[] = [];
+    if (shuffled.length > 0) {
+      initialBlanks = getBlanksForWord(shuffled[0].word, blanksPerWord);
+    }
+    return { valid, shuffled, initialBlanks };
+  }, [reviews, blanksPerWord]);
+
+  const initial = useMemo(() => buildInitial(), [buildInitial]);
+
+  const [shuffledReviews] = useState<VocabReview[]>(
+    () => initial.shuffled
+  );
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(timeLimit);
+  const [gameOver, setGameOver] = useState<{ won: boolean } | null>(null);
+  const [activeBlankIdx, setActiveBlankIdx] = useState(0); // Index into currentBlanks
+  const [currentBlanks, setCurrentBlanks] = useState<number[]>(() => initial.initialBlanks);
+  const [filledLetters, setFilledLetters] = useState<Record<number, string>>({});
+  const [wrongOption, setWrongOption] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const scoreRef = useRef(0);
+  const streakRef = useRef(0);
+  const bestStreakRef = useRef(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const currentReview = shuffledReviews[currentIndex];
+
+  const initWord = useCallback((review: VocabReview) => {
+    if (!review) return;
+    const blanks = getBlanksForWord(review.word, blanksPerWord);
+    setCurrentBlanks(blanks);
+    setActiveBlankIdx(0);
+    setFilledLetters({});
+    setWrongOption(null);
+    
+    if (level >= 4) {
+      speakWord(review.word, review.word_id, review.audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
+    }
+  }, [blanksPerWord, level]);
+
+  // Handle first word sound if needed
+  const firstWordSoundPlayed = useRef(false);
+  useEffect(() => {
+    if (level >= 4 && shuffledReviews.length > 0 && !firstWordSoundPlayed.current) {
+      firstWordSoundPlayed.current = true;
+      speakWord(shuffledReviews[0].word, shuffledReviews[0].word_id, shuffledReviews[0].audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
+    }
+  }, [level, shuffledReviews]);
+
+  useEffect(() => {
+    if (gameOver) return;
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          setGameOver({ won: false });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current!);
+  }, [gameOver]);
+
+  const handleOptionClick = (letter: string) => {
+    if (gameOver || !currentReview) return;
+    
+    const correctLetter = currentReview.word[currentBlanks[activeBlankIdx]].toLowerCase();
+    
+    if (letter === correctLetter) {
+      playFeedback('correct');
+      setFilledLetters(prev => ({ ...prev, [currentBlanks[activeBlankIdx]]: letter }));
+      setWrongOption(null);
+      
+      if (activeBlankIdx + 1 < currentBlanks.length) {
+        setActiveBlankIdx(prev => prev + 1);
+      } else {
+        // Word completed
+        const nextScore = score + 1;
+        setScore(nextScore);
+        scoreRef.current = nextScore;
+        streakRef.current += 1;
+        if (streakRef.current > bestStreakRef.current) {
+          bestStreakRef.current = streakRef.current;
+        }
+
+        if (nextScore >= matchTarget) {
+          const stats: LevelStats = {
+            bestStreak: bestStreakRef.current,
+            avgSecondsPerMatch: (timeLimit - timeLeft) / nextScore,
+            totalMatches: nextScore,
+            timeUsed: timeLimit - timeLeft,
+          };
+          onLevelComplete?.(level, nextScore, stats);
+          return;
+        }
+
+        // Move to next word after a short delay
+        setTimeout(() => {
+          const nextIndex = (currentIndex + 1) % shuffledReviews.length;
+          setCurrentIndex(nextIndex);
+          initWord(shuffledReviews[nextIndex]);
+        }, 600);
+      }
+    } else {
+      playFeedback('wrong');
+      setWrongOption(letter);
+      streakRef.current = 0;
+      setTimeout(() => setWrongOption(null), 400);
+    }
+  };
+
+  const options = useMemo(() => {
+    if (!currentReview || currentBlanks.length === 0) return [];
+    const correctLetter = currentReview.word[currentBlanks[activeBlankIdx]];
+    return getOptionsForBlank(correctLetter, optionsCount);
+  }, [currentReview, currentBlanks, activeBlankIdx, optionsCount]);
+
+  if (!currentReview) return null;
+
+  const progress = (score / matchTarget) * 100;
+
+  if (gameOver && !gameOver.won) {
+    return (
+      <div className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-orange-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+        <div className="relative flex flex-col items-center gap-8 animate-in zoom-in-95 duration-500">
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            className="w-32 h-32 rounded-[40px] flex items-center justify-center text-white shadow-2xl bg-gradient-to-br from-orange-400 to-red-500"
+          >
+            <Trophy className="w-16 h-16" />
+          </motion.div>
+          <div className="text-center space-y-2">
+            <h2 className="text-4xl font-black text-slate-800">Time Up!</h2>
+            <p className="text-xl font-bold text-slate-500">
+              Score: {cumulativeScore + score}
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 w-96">
+            <button
+              onClick={() => {
+                setScore(0);
+                scoreRef.current = 0;
+                setTimeLeft(timeLimit);
+                setCurrentIndex(0);
+                setGameOver(null);
+                initWord(shuffledReviews[0]);
+              }}
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <Gamepad2 className="w-6 h-6" />
+              <span>Retry Level {level}</span>
+            </button>
+            <button onClick={onBack} className="w-full py-4 rounded-2xl font-bold text-lg border-2 border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-500 transition-all">
+              Quit Game
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex flex-col items-center min-h-[80vh] p-4 max-w-2xl mx-auto w-full pt-8 overflow-hidden">
+      {/* Decorative blobs */}
+      <div className="absolute top-20 -left-20 w-72 h-72 bg-green-200 rounded-full blur-3xl opacity-40 animate-levitate pointer-events-none" />
+      <div className="absolute top-40 -right-16 w-60 h-60 bg-blue-200 rounded-full blur-3xl opacity-40 animate-levitate delay-200 pointer-events-none" />
+
+      {/* HUD */}
+      <div className="relative w-full mb-12">
+        <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4">
+          <div className="flex justify-between items-center mb-3 px-2">
+            <button onClick={onBack} className="px-4 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95">
+              <X className="w-4 h-4" />
+              <span>Quit</span>
+            </button>
+            <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
+              Level {level}
+            </div>
+            <div className="flex items-center gap-2 text-slate-600 font-bold">
+              <Timer className={cn("w-5 h-5", timeLeft < 10 && "text-red-500 animate-pulse")} />
+              <span className={cn("tabular-nums", timeLeft < 10 && "text-red-500")}>
+                {timeLeft}s
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-600 font-bold">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              <span className="tabular-nums">{cumulativeScore + score}</span>
+            </div>
+          </div>
+          <div className="h-3 bg-white/50 rounded-full overflow-hidden border border-white/70">
+            <motion.div
+              className="h-full bg-gradient-to-r from-green-400 to-emerald-400"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.5 }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Game Content */}
+      <div className="flex-1 w-full flex flex-col items-center justify-center gap-12">
+        {/* Prompt */}
+        <div className="text-center space-y-4">
+          {isSoundMode ? (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => speakWord(currentReview.word, currentReview.word_id, currentReview.audio_url, () => setIsPlaying(true), () => setIsPlaying(false))}
+              className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-200"
+            >
+              <Volume2 className={cn("w-10 h-10", isPlaying && "animate-pulse")} />
+            </motion.button>
+          ) : (
+            <h2 className="text-3xl font-black text-slate-800 font-baloo">
+              {extractShortMeaning(currentReview.meaning || '')}
+            </h2>
+          )}
+        </div>
+
+        {/* Word Display */}
+        <div className="flex flex-wrap justify-center gap-2">
+          {currentReview.word.split('').map((char, idx) => {
+            const isBlank = currentBlanks.includes(idx);
+            const isActive = isBlank && currentBlanks[activeBlankIdx] === idx;
+            const isFilled = isBlank && filledLetters[idx] !== undefined;
+            
+            return (
+              <motion.div
+                key={`${currentIndex}-${idx}`}
+                layoutId={`${currentIndex}-${idx}`}
+                className={cn(
+                  "w-12 h-16 md:w-14 md:h-20 rounded-2xl flex items-center justify-center text-3xl md:text-4xl font-black transition-all",
+                  isBlank 
+                    ? (isFilled 
+                        ? "bg-emerald-100 text-emerald-600 border-2 border-emerald-300 shadow-sm"
+                        : isActive 
+                          ? "bg-white border-2 border-indigo-500 text-indigo-500 shadow-indigo-100 animate-pulse scale-105"
+                          : "bg-slate-100 border-2 border-dashed border-slate-300 text-transparent")
+                    : "bg-white/40 text-slate-400 border border-white/80"
+                )}
+              >
+                {isBlank ? (isFilled ? filledLetters[idx].toUpperCase() : '_') : char.toUpperCase()}
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Options */}
+        <div className="flex gap-4">
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={`options-${currentIndex}-${activeBlankIdx}`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex gap-4"
+            >
+              {options.map((letter) => (
+                <motion.button
+                  key={letter}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleOptionClick(letter)}
+                  animate={wrongOption === letter ? { x: [-5, 5, -5, 5, 0], backgroundColor: '#fecaca' } : {}}
+                  className={cn(
+                    "w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center text-3xl font-black shadow-lg border-2 transition-all",
+                    wrongOption === letter 
+                      ? "bg-red-100 border-red-400 text-red-600" 
+                      : "bg-white border-white text-slate-700 hover:border-indigo-200"
+                  )}
+                >
+                  {letter.toUpperCase()}
+                </motion.button>
+              ))}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
+}
