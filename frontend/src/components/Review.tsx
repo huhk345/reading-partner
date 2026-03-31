@@ -140,25 +140,28 @@ const ClayWordCard = ({
   ];
   const cardStyle = colors[index % colors.length];
 
-  const getMeaningHeight = (meaning: string | undefined | null) => {
-    const baseHeight = 60;
-    const text = meaning || '';
-    const newlineCount = (text.match(/\n/g) || []).length;
-    const extraHeight = Math.max(0, (text.length - 80) / 2) + (newlineCount * 20);
-    return baseHeight + Math.min(extraHeight, 150);
-  };
+  const [backHeight, setBackHeight] = useState(320);
+  const measureRef = useRef<HTMLDivElement>(null);
 
-  const getSentenceHeight = (sentence: string | undefined | null) => {
-    if (!sentence) return 0;
-    const baseHeight = 70;
-    const text = sentence;
-    const newlineCount = (text.match(/\n/g) || []).length;
-    const extraHeight = Math.max(0, (text.length - 40) / 1.8) + (newlineCount * 24);
-    return baseHeight + Math.min(extraHeight, 180);
-  };
+  useEffect(() => {
+    const updateHeight = () => {
+      if (measureRef.current) {
+        // Measure the content and add extra space for padding and borders
+        const height = measureRef.current.offsetHeight + 40; // 40px for padding/footer buffer
+        console.log(height,'height')
+        setBackHeight(Math.max(300, height));
+      }
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    if (measureRef.current) observer.observe(measureRef.current);
+
+    return () => observer.disconnect();
+  }, [review.meaning, review.sentence]);
 
   return (
-    <motion.div 
+    <motion.div
       layout
       className="relative perspective-1000 cursor-pointer group break-inside-avoid w-full"
       onClick={handleCardClick}
@@ -166,18 +169,51 @@ const ClayWordCard = ({
       onMouseLeave={handleMouseLeave}
       whileHover={{ scale: 1.02, y: -4 }}
       whileTap={{ scale: 0.98 }}
-      animate={{ 
-        height: isFlipped ? 280 + getMeaningHeight(review.meaning || '') + getSentenceHeight(review.sentence) : 200 
+      animate={{
+        height: isFlipped ? backHeight : 200
       }}
-      transition={{ 
-        type: "spring", 
-        stiffness: 150, 
+      transition={{
+        type: "spring",
+        stiffness: 150,
         damping: 20,
         mass: 0.8,
         layout: { type: "spring", stiffness: 150, damping: 25 }
       }}
     >
-      <motion.div
+      {/* Virtual measurement element with same styling */}
+      <div 
+        className="absolute top-0 left-0 w-full opacity-0 pointer-events-none -z-50 px-4 py-4 border-2 border-transparent"
+        aria-hidden="true"
+      >
+        <div ref={measureRef} className="flex flex-col space-y-2  pr-1 custom-scrollbar">
+          <div className="text-center pt-1">
+            <h4 className="text-lg font-black leading-tight font-baloo">{review.word}</h4>
+            <p className="text-indigo-400 text-sm">{review.phonetic}</p>
+          </div>
+          <div className="h-0.5 w-full" />
+          <div className="space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50">Meaning</span>
+            <p className="text-base font-semibold leading-relaxed italic px-1 whitespace-pre-line">
+              {review.meaning}
+            </p>
+          </div>
+          {review.sentence && (
+            <div className="pt-2">
+              <h5 className="text-xs font-black uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                Context
+              </h5>
+              <div className="p-3 rounded-xl italic text-sm leading-relaxed border border-transparent bg-slate-50/50">
+                &quot;{review.sentence}&quot;
+              </div>
+            </div>
+          )}
+          <div className="mt-2 pt-2 border-t border-transparent flex flex-col items-center">
+            <div className="text-[8px] font-black uppercase tracking-widest">FLIP BACK</div>
+          </div>
+        </div>
+      </div>
+
+      <motion.div        
         animate={{ rotateY: isFlipped ? 180 : 0 }}
         transition={{ 
           type: "spring", 
