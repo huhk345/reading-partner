@@ -313,12 +313,12 @@ def parse_pdf(file_path, debug=False):
     # Sentence splitting with abbreviation protection
     clean_text = re.sub(r'\n+', ' ', full_text)
     abbreviations = [
-        r'Mrs\.', r'Mr\.', r'Ms\.', r'Dr\.', r'Prof\.', r'Sr\.', r'Jr\.',
-        r'St\.', r'Ave\.', r'Blvd\.', r'Rd\.',
-        r'etc\.', r'vs\.', r'Inc\.', r'Ltd\.', r'Corp\.',
-        r'vol\.', r'ch\.', r'fig\.', r'approx\.',
-        r'A\.M\.', r'P\.M\.', r'a\.m\.', r'p\.m\.',
-        r'U\.S\.', r'U\.K\.', r'E\.U\.',
+        r'\bMrs\.', r'\bMr\.', r'\bMs\.', r'\bDr\.', r'\bProf\.', r'\bSr\.', r'\bJr\.',
+        r'\bSt\.', r'\bAve\.', r'\bBlvd\.', r'\bRd\.',
+        r'\betc\.', r'\bvs\.', r'\bInc\.', r'\bLtd\.', r'\bCorp\.',
+        r'\bvol\.', r'\bch\.', r'\bfig\.', r'\bapprox\.',
+        r'\bA\.M\.', r'\bP\.M\.', r'\ba\.m\.', r'\bp\.m\.',
+        r'\bU\.S\.', r'\bU\.K\.', r'\bE\.U\.',
     ]
     abbreviation_pattern = '|'.join(abbreviations)
     protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), clean_text)

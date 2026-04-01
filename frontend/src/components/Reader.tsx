@@ -31,7 +31,7 @@ function fallbackSpeak(text: string, onComplete?: () => void) {
 function endsWithSentencePunctuation(text: string, abbreviations: string[], inQuotes: boolean): { endsWithPunctuation: boolean, nextInQuotes: boolean } {
   if (!text) return { endsWithPunctuation: false, nextInQuotes: inQuotes };
 
-  const abbreviationPattern = abbreviations.map(a => a.replace(/\./g, '\\.')).join('|');
+  const abbreviationPattern = abbreviations.map(a => `\\b${a.replace(/\./g, '\\.')}`).join('|');
   const protectedText = text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
 
   const quoteChars = '"“”';
