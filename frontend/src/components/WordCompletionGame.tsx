@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
 import { VocabReview, LevelStats } from '../types';
 import { cn, extractShortMeaning } from '../lib/utils';
-import { Timer, Trophy, X, Gamepad2, Volume2, LogOut } from 'lucide-react';
+import { Timer, Trophy, Gamepad2, Volume2, LogOut } from 'lucide-react';
 
 interface WordCompletionGameProps {
   reviews: VocabReview[];
