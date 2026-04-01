@@ -18,10 +18,10 @@ const MATCH_GAME_LEVELS: LevelConfig[] = [
 ];
 
 const COMPLETION_GAME_LEVELS: LevelConfig[] = [
-  { level: 1, difficulty: 'Easy',        timeLimit: 60, matchTarget: 5,  mode: 'text' },
-  { level: 2, difficulty: 'Medium-Easy', timeLimit: 60, matchTarget: 8,  mode: 'text' },
-  { level: 3, difficulty: 'Medium',      timeLimit: 60, matchTarget: 12, mode: 'text' },
-  { level: 4, difficulty: 'Medium-Hard', timeLimit: 60, matchTarget: 10, mode: 'mixed' }, // mixed here means sound mode level >= 4 in component
+  { level: 1, difficulty: 'Easy',        timeLimit: 60, matchTarget: 10,  mode: 'text' },
+  { level: 2, difficulty: 'Medium-Easy', timeLimit: 60, matchTarget: 12,  mode: 'text' },
+  { level: 3, difficulty: 'Medium',      timeLimit: 60, matchTarget: 15, mode: 'text' },
+  { level: 4, difficulty: 'Medium-Hard', timeLimit: 60, matchTarget: 12, mode: 'mixed' }, // mixed here means sound mode level >= 4 in component
   { level: 5, difficulty: 'Hard',        timeLimit: 60, matchTarget: 15, mode: 'mixed' },
 ];
 
