@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
 import { VocabReview, LevelStats } from '../types';
 import { cn, extractShortMeaning } from '../lib/utils';
-import { Timer, Trophy, X, Gamepad2, Volume2 } from 'lucide-react';
+import { Timer, Trophy, X, Gamepad2, Volume2, LogOut } from 'lucide-react';
 
 interface WordCompletionGameProps {
   reviews: VocabReview[];
@@ -145,11 +145,25 @@ export default function WordCompletionGame({
     const valid = reviews.filter(r => r.word && r.word.length > 1 && /[a-zA-Z]/.test(r.word));
     const shuffled = [...valid].sort(() => Math.random() - 0.5);
     let initialBlanks: number[] = [];
+    let initialOptions: string[] = [];
     if (shuffled.length > 0) {
       initialBlanks = getBlanksForWord(shuffled[0].word, blanksPerWord);
+      if (level > 2) {
+        const required = initialBlanks.map(idx => shuffled[0].word[idx].toLowerCase());
+        const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+        initialOptions = [...required];
+        while (initialOptions.length < 8) {
+          const randomLetter = alphabet[Math.floor(Math.random() * 26)];
+          initialOptions.push(randomLetter);
+        }
+        initialOptions.sort(() => Math.random() - 0.5);
+      } else {
+        const correctLetter = shuffled[0].word[initialBlanks[0]];
+        initialOptions = getOptionsForBlank(correctLetter, optionsCount);
+      }
     }
-    return { valid, shuffled, initialBlanks };
-  }, [reviews, blanksPerWord]);
+    return { valid, shuffled, initialBlanks, initialOptions };
+  }, [reviews, blanksPerWord, level, optionsCount]);
 
   const initial = useMemo(() => buildInitial(), [buildInitial]);
 
@@ -162,7 +176,9 @@ export default function WordCompletionGame({
   const [gameOver, setGameOver] = useState<{ won: boolean } | null>(null);
   const [activeBlankIdx, setActiveBlankIdx] = useState(0); // Index into currentBlanks
   const [currentBlanks, setCurrentBlanks] = useState<number[]>(() => initial.initialBlanks);
+  const [currentOptions, setCurrentOptions] = useState<string[]>(() => initial.initialOptions);
   const [filledLetters, setFilledLetters] = useState<Record<number, string>>({});
+  const [usedOptionIndices, setUsedOptionIndices] = useState<number[]>([]);
   const [wrongOption, setWrongOption] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -179,12 +195,29 @@ export default function WordCompletionGame({
     setCurrentBlanks(blanks);
     setActiveBlankIdx(0);
     setFilledLetters({});
+    setUsedOptionIndices([]);
     setWrongOption(null);
+
+    let newOptions: string[] = [];
+    if (level > 2) {
+      const required = blanks.map(idx => review.word[idx].toLowerCase());
+      const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+      newOptions = [...required];
+      while (newOptions.length < 8) {
+        const randomLetter = alphabet[Math.floor(Math.random() * 26)];
+        newOptions.push(randomLetter);
+      }
+      newOptions.sort(() => Math.random() - 0.5);
+    } else {
+      const correctLetter = review.word[blanks[0]];
+      newOptions = getOptionsForBlank(correctLetter, optionsCount);
+    }
+    setCurrentOptions(newOptions);
     
     if (level >= 4) {
       speakWord(review.word, review.word_id, review.audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
     }
-  }, [blanksPerWord, level]);
+  }, [blanksPerWord, level, optionsCount]);
 
   // Handle first word sound if needed
   const firstWordSoundPlayed = useRef(false);
@@ -210,18 +243,27 @@ export default function WordCompletionGame({
     return () => clearInterval(timerRef.current!);
   }, [gameOver]);
 
-  const handleOptionClick = (letter: string) => {
+  const handleOptionClick = (letter: string, optionIndex?: number) => {
     if (gameOver || !currentReview) return;
+    if (level > 2 && optionIndex !== undefined && usedOptionIndices.includes(optionIndex)) return;
     
     const correctLetter = currentReview.word[currentBlanks[activeBlankIdx]].toLowerCase();
     
     if (letter === correctLetter) {
       playFeedback('correct');
       setFilledLetters(prev => ({ ...prev, [currentBlanks[activeBlankIdx]]: letter }));
+      if (level > 2 && optionIndex !== undefined) {
+        setUsedOptionIndices(prev => [...prev, optionIndex]);
+      }
       setWrongOption(null);
       
       if (activeBlankIdx + 1 < currentBlanks.length) {
-        setActiveBlankIdx(prev => prev + 1);
+        const nextBlankIdx = activeBlankIdx + 1;
+        setActiveBlankIdx(nextBlankIdx);
+        if (level <= 2) {
+          const nextCorrectLetter = currentReview.word[currentBlanks[nextBlankIdx]];
+          setCurrentOptions(getOptionsForBlank(nextCorrectLetter, optionsCount));
+        }
       } else {
         // Word completed
         const nextScore = score + 1;
@@ -258,12 +300,6 @@ export default function WordCompletionGame({
     }
   };
 
-  const options = useMemo(() => {
-    if (!currentReview || currentBlanks.length === 0) return [];
-    const correctLetter = currentReview.word[currentBlanks[activeBlankIdx]];
-    return getOptionsForBlank(correctLetter, optionsCount);
-  }, [currentReview, currentBlanks, activeBlankIdx, optionsCount]);
-
   if (!currentReview) return null;
 
   const progress = (score / matchTarget) * 100;
@@ -296,13 +332,17 @@ export default function WordCompletionGame({
                 setGameOver(null);
                 initWord(shuffledReviews[0]);
               }}
-              className="clay-button clay-primary w-full py-4 text-lg shadow-xl flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
             >
-              <Gamepad2 className="w-6 h-6" />
+              <Gamepad2 className="w-6 h-6 group-hover:rotate-12 transition-transform" />
               <span>Retry Level {level}</span>
             </button>
-            <button onClick={onBack} className="clay-button clay-secondary w-full py-4 text-lg shadow-xl">
-              Quit Game
+            <button 
+              onClick={onBack} 
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-slate-500 text-white shadow-lg shadow-slate-200 hover:shadow-xl hover:shadow-slate-300 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 group"
+            >
+              <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+              <span>Quit Game</span>
             </button>
           </div>
         </div>
@@ -320,8 +360,11 @@ export default function WordCompletionGame({
       <div className="relative w-full mb-12">
         <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4">
           <div className="flex justify-between items-center mb-3 px-2">
-            <button onClick={onBack} className="px-4 py-1.5 rounded-xl font-bold text-xs bg-gradient-to-r from-indigo-500 to-purple-500 text-white flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95">
-              <X className="w-4 h-4" />
+            <button 
+              onClick={onBack} 
+              className="px-4 py-1.5 rounded-xl font-bold text-xs bg-slate-100 text-slate-500 flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 shadow-sm shadow-slate-200"
+            >
+              <LogOut className="w-4 h-4" />
               <span>Quit</span>
             </button>
             <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
@@ -398,32 +441,42 @@ export default function WordCompletionGame({
         </div>
 
         {/* Options */}
-        <div className="flex gap-4">
+        <div className="w-full max-w-2xl px-4">
           <AnimatePresence mode="wait">
             <motion.div 
-              key={`options-${currentIndex}-${activeBlankIdx}`}
+              key={level > 2 ? `options-${currentIndex}` : `options-${currentIndex}-${activeBlankIdx}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="flex gap-4"
+              className={cn(
+                "flex flex-wrap justify-center gap-2 md:gap-3",
+                level > 2 ? "" : "gap-4"
+              )}
             >
-              {options.map((letter) => (
-                <motion.button
-                  key={letter}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => handleOptionClick(letter)}
-                  animate={wrongOption === letter ? { x: [-5, 5, -5, 5, 0], backgroundColor: '#fecaca' } : {}}
-                  className={cn(
-                    "w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center text-3xl font-black shadow-lg border-2 transition-all",
-                    wrongOption === letter 
-                      ? "bg-red-100 border-red-400 text-red-600" 
-                      : "bg-white border-white text-slate-700 hover:border-indigo-200"
-                  )}
-                >
-                  {letter.toUpperCase()}
-                </motion.button>
-              ))}
+              {currentOptions.map((letter, idx) => {
+                const isUsed = level > 2 && usedOptionIndices.includes(idx);
+                return (
+                  <motion.button
+                    key={`${currentIndex}-${idx}`}
+                    whileHover={isUsed ? {} : { scale: 1.05 }}
+                    whileTap={isUsed ? {} : { scale: 0.95 }}
+                    onClick={() => handleOptionClick(letter, idx)}
+                    animate={wrongOption === letter ? { x: [-5, 5, -5, 5, 0], backgroundColor: '#fecaca' } : {}}
+                    disabled={isUsed}
+                    className={cn(
+                      level > 2 ? "w-14 h-14 md:w-16 md:h-16 text-2xl" : "w-16 h-16 md:w-20 md:h-20 text-3xl",
+                      "rounded-xl md:rounded-2xl flex items-center justify-center font-black shadow-lg border-2 transition-all",
+                      isUsed 
+                        ? "opacity-0 pointer-events-none" 
+                        : (wrongOption === letter 
+                            ? "bg-red-100 border-red-400 text-red-600" 
+                            : "bg-white border-white text-slate-700 hover:border-indigo-200")
+                    )}
+                  >
+                    {letter.toUpperCase()}
+                  </motion.button>
+                );
+              })}
             </motion.div>
           </AnimatePresence>
         </div>

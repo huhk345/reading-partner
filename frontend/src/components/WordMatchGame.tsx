@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
 import { VocabReview, LevelStats } from '../types';
 import { cn, extractShortMeaning } from '../lib/utils';
-import { Timer, Trophy, X, Gamepad2 } from 'lucide-react';
+import { Timer, Trophy, X, Gamepad2, LogOut } from 'lucide-react';
 
 type SlotData = {
   id: string;
@@ -501,16 +501,16 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
                 setIsAnimating(false);
                 setGameOver(null);
               }}
-              className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
             >
-              <Gamepad2 className="w-6 h-6 group-hover:rotate-12 group-hover:scale-110 transition-transform" />
+              <Gamepad2 className="w-6 h-6 group-hover:rotate-12 transition-transform" />
               <span>{onLevelComplete ? `Retry Level ${level ?? 1}` : 'Play Match Game'}</span>
             </button>
             <button
               onClick={onBack}
-              className="w-full py-4 rounded-2xl font-bold text-lg border-2 border-slate-200 text-slate-500 hover:border-red-200 hover:text-red-500 hover:bg-red-50 active:scale-95 transition-all flex items-center justify-center gap-2 group"
+              className="w-full py-4 rounded-2xl font-bold text-lg bg-slate-500 text-white shadow-lg shadow-slate-200 hover:shadow-xl hover:shadow-slate-300 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 group"
             >
-              <X className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+              <LogOut className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>Quit Game</span>
             </button>
           </div>
@@ -530,12 +530,12 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
       <div className="relative w-full mb-8">
         <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-lg p-4">
           <div className="flex justify-between items-center mb-3 px-2">
-            <button
-              onClick={onBack}
-              className="px-4 py-1.5 rounded-xl font-bold transition-all text-xs bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-200/50 hover:shadow-xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 flex items-center gap-1.5 group"
+            <button 
+              onClick={onBack} 
+              className="px-4 py-1.5 rounded-xl font-bold text-xs bg-slate-100 text-slate-500 flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 shadow-sm shadow-slate-200"
             >
-              <X className="w-4 h-4 group-hover:rotate-90 transition-transform" />
-              <span>Quit Game</span>
+              <LogOut className="w-4 h-4" />
+              <span>Quit</span>
             </button>
             {level !== undefined && (
               <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
