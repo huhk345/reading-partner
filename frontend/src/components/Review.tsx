@@ -405,18 +405,29 @@ export default function Review({ onBack }: ReviewProps) {
   }
 
   if (mode === 'game') {
-    const resetSession = () => {
-      setGameSession({ currentLevel: 1, cumulativeScore: 0, status: 'idle', gameType: undefined });
+    const resetSession = (gameType?: 'match' | 'completion') => {
+      setGameSession({ 
+        currentLevel: 1, 
+        cumulativeScore: 0, 
+        status: gameType ? 'playing' : 'idle', 
+        gameType: gameType 
+      });
+    };
+
+    const handleRestart = () => {
+      resetSession(gameSession.gameType);
     };
 
     const handleLevelComplete = (level: number, score: number, stats: LevelStats) => {
       const newCumulative = gameSession.cumulativeScore + score;
+      const bonusTime = stats.timeLeft;
       setGameSession(prev => ({
         ...prev,
         currentLevel: level,
         cumulativeScore: newCumulative,
         status: level >= 5 ? 'all-complete' : 'level-stats',
         levelStats: stats,
+        bonusTime: bonusTime,
       }));
     };
 
@@ -673,10 +684,12 @@ export default function Review({ onBack }: ReviewProps) {
           key={`match-${gameSession.currentLevel}`}
           reviews={reviews}
           onBack={() => { setMode('wall'); resetSession(); }}
+          onRestart={handleRestart}
           onLevelComplete={handleLevelComplete}
           mode={cfg.mode}
           level={cfg.level}
           timeLimit={cfg.timeLimit}
+          bonusTime={gameSession.bonusTime}
           matchTarget={cfg.matchTarget}
           soundThreshold={cfg.soundThreshold}
           cumulativeScore={gameSession.cumulativeScore}
@@ -688,9 +701,11 @@ export default function Review({ onBack }: ReviewProps) {
           key={`completion-${gameSession.currentLevel}`}
           reviews={reviews}
           onBack={() => { setMode('wall'); resetSession(); }}
+          onRestart={handleRestart}
           onLevelComplete={handleLevelComplete}
           level={cfg.level}
           timeLimit={cfg.timeLimit}
+          bonusTime={gameSession.bonusTime}
           matchTarget={cfg.matchTarget}
           cumulativeScore={gameSession.cumulativeScore}
         />

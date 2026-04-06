@@ -21,10 +21,12 @@ type SlotData = {
 interface WordMatchGameProps {
   reviews: VocabReview[];
   onBack: () => void;
+  onRestart?: () => void;
   onLevelComplete?: (level: number, score: number, stats: LevelStats) => void;
   mode?: 'text' | 'audio' | 'mixed';
   level?: number;
   timeLimit?: number;
+  bonusTime?: number;
   matchTarget?: number;
   soundThreshold?: number;
   cumulativeScore?: number;
@@ -219,10 +221,23 @@ function slotClass(
   );
 }
 
-export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode = 'text', level, timeLimit, matchTarget, soundThreshold, cumulativeScore = 0 }: WordMatchGameProps) {
+export default function WordMatchGame({ 
+  reviews, 
+  onBack, 
+  onRestart,
+  onLevelComplete, 
+  mode = 'text', 
+  level, 
+  timeLimit, 
+  bonusTime = 0,
+  matchTarget, 
+  soundThreshold, 
+  cumulativeScore = 0 
+}: WordMatchGameProps) {
   const maxScore = matchTarget ?? (mode === 'audio' ? 20 : 45);
   const effectiveSoundThreshold = soundThreshold ?? 25;
-  const effectiveTimeLimit = timeLimit ?? 120;
+  const baseTimeLimit = timeLimit ?? 120;
+  const totalTimeLimit = baseTimeLimit + bonusTime;
 
   const buildInitial = useCallback(() => {
     const validReviews = reviews.filter(
@@ -241,7 +256,7 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
     () => initial?.right ?? []
   );
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(effectiveTimeLimit);
+  const [timeLeft, setTimeLeft] = useState(totalTimeLimit);
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
   const [selectedRight, setSelectedRight] = useState<number | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -340,12 +355,12 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
 
             if (newScore >= maxScore) {
               if (onLevelComplete) {
-                const timeUsed = effectiveTimeLimit - timeLeft;
                 const stats: LevelStats = {
                   bestStreak: bestStreakRef.current,
-                  avgSecondsPerMatch: timeUsed / newScore,
+                  avgSecondsPerMatch: (totalTimeLimit - timeLeft) / newScore,
                   totalMatches: newScore,
-                  timeUsed,
+                  timeUsed: totalTimeLimit - timeLeft,
+                  timeLeft: timeLeft,
                 };
                 onLevelComplete(level ?? 1, newScore, stats);
                 setSelectedLeft(null);
@@ -446,7 +461,7 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
         }
       }
     },
-    [isAnimating, gameOver, selectedLeft, selectedRight, leftSlots, rightSlots, maxScore, mode, disabledSlots, onLevelComplete, effectiveTimeLimit, timeLeft, level, effectiveSoundThreshold]
+    [isAnimating, gameOver, selectedLeft, selectedRight, leftSlots, rightSlots, maxScore, mode, disabledSlots, onLevelComplete, baseTimeLimit, totalTimeLimit, timeLeft, level, effectiveSoundThreshold]
   );
 
   const progress = Math.min((score / maxScore) * 100, 100);
@@ -488,23 +503,11 @@ export default function WordMatchGame({ reviews, onBack, onLevelComplete, mode =
           </div>
           <div className="flex flex-col gap-3 w-96">
             <button
-              onClick={() => {
-                const { left, right, queue } = buildSlots(reviews);
-                setLeftSlots(left);
-                setRightSlots(right);
-                queueRef.current = queue;
-                setScore(0);
-                scoreRef.current = 0;
-                setTimeLeft(effectiveTimeLimit);
-                setSelectedLeft(null);
-                setSelectedRight(null);
-                setIsAnimating(false);
-                setGameOver(null);
-              }}
+              onClick={onRestart}
               className="w-full py-4 rounded-2xl font-bold text-lg bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
             >
               <Gamepad2 className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-              <span>{onLevelComplete ? `Retry Level ${level ?? 1}` : 'Play Match Game'}</span>
+              <span>Restart Game</span>
             </button>
             <button
               onClick={onBack}

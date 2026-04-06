@@ -83,6 +83,7 @@ export type LevelStats = {
   avgSecondsPerMatch: number;
   totalMatches: number;
   timeUsed: number;
+  timeLeft: number;
 };
 
 export type GameSession = {
@@ -91,6 +92,7 @@ export type GameSession = {
   status: 'idle' | 'playing' | 'level-stats' | 'game-over' | 'all-complete';
   gameType?: 'match' | 'completion';
   levelStats?: LevelStats;
+  bonusTime?: number;
 };
 
 export function calcSoundThreshold(matchTarget: number): number {

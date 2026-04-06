@@ -10,9 +10,11 @@ import { Timer, Trophy, Gamepad2, Volume2, LogOut } from 'lucide-react';
 interface WordCompletionGameProps {
   reviews: VocabReview[];
   onBack: () => void;
+  onRestart?: () => void;
   onLevelComplete?: (level: number, score: number, stats: LevelStats) => void;
   level?: number;
   timeLimit?: number;
+  bonusTime?: number;
   matchTarget?: number;
   cumulativeScore?: number;
 }
@@ -126,17 +128,26 @@ function getOptionsForBlank(correctLetter: string, count: number): string[] {
   return options.sort(() => Math.random() - 0.5);
 }
 
+function getMeaningBeforeDefinition(meaning: string): string {
+  if (!meaning) return '';
+  const parts = meaning.split('【Definition】');
+  return parts[0].trim();
+}
+
 export default function WordCompletionGame({ 
   reviews, 
   onBack, 
+  onRestart,
   onLevelComplete, 
   level = 1, 
   timeLimit = 60, 
+  bonusTime = 0,
   matchTarget = 5,
   cumulativeScore = 0 
 }: WordCompletionGameProps) {
   
   // Level Config
+  const totalTimeLimit = timeLimit + bonusTime;
   const blanksPerWord = level === 1 ? 1 : level === 2 ? 2 : (level >= 3 ? 3 : 2);
   const optionsCount = level >= 5 ? 3 : 2;
   const isSoundMode = level >= 4;
@@ -172,7 +183,7 @@ export default function WordCompletionGame({
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(timeLimit);
+  const [timeLeft, setTimeLeft] = useState(totalTimeLimit);
   const [gameOver, setGameOver] = useState<{ won: boolean } | null>(null);
   const [activeBlankIdx, setActiveBlankIdx] = useState(0); // Index into currentBlanks
   const [currentBlanks, setCurrentBlanks] = useState<number[]>(() => initial.initialBlanks);
@@ -214,19 +225,17 @@ export default function WordCompletionGame({
     }
     setCurrentOptions(newOptions);
     
-    if (level >= 4) {
-      speakWord(review.word, review.word_id, review.audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
-    }
+    speakWord(review.word, review.word_id, review.audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
   }, [blanksPerWord, level, optionsCount]);
 
   // Handle first word sound if needed
   const firstWordSoundPlayed = useRef(false);
   useEffect(() => {
-    if (level >= 4 && shuffledReviews.length > 0 && !firstWordSoundPlayed.current) {
+    if (shuffledReviews.length > 0 && !firstWordSoundPlayed.current) {
       firstWordSoundPlayed.current = true;
       speakWord(shuffledReviews[0].word, shuffledReviews[0].word_id, shuffledReviews[0].audio_url, () => setIsPlaying(true), () => setIsPlaying(false));
     }
-  }, [level, shuffledReviews]);
+  }, [shuffledReviews]);
 
   useEffect(() => {
     if (gameOver) return;
@@ -277,9 +286,10 @@ export default function WordCompletionGame({
         if (nextScore >= matchTarget) {
           const stats: LevelStats = {
             bestStreak: bestStreakRef.current,
-            avgSecondsPerMatch: (timeLimit - timeLeft) / nextScore,
+            avgSecondsPerMatch: (totalTimeLimit - timeLeft) / nextScore,
             totalMatches: nextScore,
-            timeUsed: timeLimit - timeLeft,
+            timeUsed: totalTimeLimit - timeLeft,
+            timeLeft: timeLeft,
           };
           onLevelComplete?.(level, nextScore, stats);
           return;
@@ -324,18 +334,11 @@ export default function WordCompletionGame({
           </div>
           <div className="flex flex-col gap-3 w-96">
             <button
-              onClick={() => {
-                setScore(0);
-                scoreRef.current = 0;
-                setTimeLeft(timeLimit);
-                setCurrentIndex(0);
-                setGameOver(null);
-                initWord(shuffledReviews[0]);
-              }}
+              onClick={onRestart}
               className="w-full py-4 rounded-2xl font-bold text-lg bg-green-500 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:scale-105 active:scale-95 transition-all group flex items-center justify-center gap-2"
             >
               <Gamepad2 className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-              <span>Retry Level {level}</span>
+              <span>Restart Game</span>
             </button>
             <button 
               onClick={onBack} 
@@ -406,8 +409,8 @@ export default function WordCompletionGame({
               <Volume2 className={cn("w-10 h-10", isPlaying && "animate-pulse")} />
             </motion.button>
           ) : (
-            <h2 className="text-3xl font-black text-slate-800 font-baloo">
-              {extractShortMeaning(currentReview.meaning || '')}
+            <h2 className="text-3xl font-black text-slate-800 font-baloo px-4">
+              {getMeaningBeforeDefinition(currentReview.meaning || '')}
             </h2>
           )}
         </div>
