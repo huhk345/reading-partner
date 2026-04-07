@@ -461,7 +461,7 @@ export default function WordMatchGame({
         }
       }
     },
-    [isAnimating, gameOver, selectedLeft, selectedRight, leftSlots, rightSlots, maxScore, mode, disabledSlots, onLevelComplete, baseTimeLimit, totalTimeLimit, timeLeft, level, effectiveSoundThreshold]
+    [isAnimating, gameOver, selectedLeft, selectedRight, leftSlots, rightSlots, maxScore, mode, disabledSlots, onLevelComplete, totalTimeLimit, timeLeft, level, effectiveSoundThreshold]
   );
 
   const progress = Math.min((score / maxScore) * 100, 100);

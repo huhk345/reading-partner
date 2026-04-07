@@ -200,27 +200,31 @@ def calculate_ocr_score(words, data):
 
 def best_ocr_extract(img, zoom, page_width):
     """
-    Run OCR with both --psm 3 and --psm 4, and choose the better result.
+    Run OCR with --psm 3, --psm 4, and --psm 11, and choose the best result.
     Returns: (words, text, score)
     """
     # Try PSM 3 (Fully automatic page segmentation, but no OSD)
     words_3, text_3, data_3 = _ocr_extract(img, zoom, page_width, config='--psm 3')
-    # print(' '.join(w['text'] for w in words_3))
     score_3 = calculate_ocr_score(words_3, data_3)
     print(f"PSM 3 Score: {score_3:.2f}")
+
     # Try PSM 4 (Assume a single column of text of variable sizes)
     words_4, text_4, data_4 = _ocr_extract(img, zoom, page_width, config='--psm 4')
-    # print(' '.join(w['text'] for w in words_4))
     score_4 = calculate_ocr_score(words_4, data_4)
     print(f"PSM 4 Score: {score_4:.2f}")
-    
-    # print(f"OCR Comparison - PSM 3 Score: {score_3:.2f}, PSM 4 Score: {score_4:.2f}")
 
-    if score_4 > score_3:
-        return words_4, text_4, score_4
-    else:
-        return words_3, text_3, score_3
+    # Try PSM 11 (Sparse text. Find as much text as possible in no particular order.)
+    words_11, text_11, data_11 = _ocr_extract(img, zoom, page_width, config='--psm 11')
+    score_11 = calculate_ocr_score(words_11, data_11)
+    print(f"PSM 11 Score: {score_11:.2f}")
 
+    results = [
+        (words_3, text_3, score_3),
+        (words_4, text_4, score_4),
+        (words_11, text_11, score_11)
+    ]
+
+    return max(results, key=lambda x: x[2])
 
 def parse_pdf(file_path, debug=False):
     """

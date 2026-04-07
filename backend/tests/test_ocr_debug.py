@@ -325,7 +325,7 @@ def test_tesseract_configs(img, label="preprocessed"):
                 status = "✓" if raw else "✗"
                 results.append((psm, oem, len(raw), raw[:60].replace('\n', ' ')))
                 if raw:
-                    print(f"  {status} PSM={psm} ({psm_names.get(psm, '?'):20s}) OEM={oem} ({oem_names.get(oem, '?'):20s}) | {len(raw):4d} chars | {repr(raw[:50])}")
+                    print(f"  {status} PSM={psm} ({psm_names.get(psm, '?'):20s}) OEM={oem} ({oem_names.get(oem, '?'):20s}) | {len(raw):4d} chars | {repr(raw[:100])}")
             except Exception as e:
                 print(f"  ✗ PSM={psm} OEM={oem} | ERROR: {e}")
 
@@ -580,7 +580,43 @@ def run_diagnostic(page=None, pdf_path=None):
         preprocessed_path = os.path.join(DEBUG_DIR, f"page_{page_num}_preprocessed.png")
         if not os.path.exists(preprocessed_path):
             print(f"\n  ⚠️  File not found: {preprocessed_path}")
-            continue
+            print(f"      Attempting to generate it from source PDF...")
+
+            # Find which PDF to use
+            source_pdf = pdf_path
+            if source_pdf is None:
+                source_pdf = find_pdf_for_page(page_num)
+
+            if not source_pdf or not os.path.exists(source_pdf):
+                print(f"      ❌ Could not find source PDF for page {page_num}. Please provide it with --pdf.")
+                continue
+
+            try:
+                import fitz
+                doc = fitz.open(source_pdf)
+                idx = page_num - 1
+                if idx < 0 or idx >= len(doc):
+                    print(f"      ❌ Page {page_num} is out of range for {os.path.basename(source_pdf)}")
+                    doc.close()
+                    continue
+
+                page = doc.load_page(idx)
+                mat = fitz.Matrix(2, 2)
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("png")
+                orig_img = Image.open(io.BytesIO(img_data))
+
+                # Save to debug directory
+                if not os.path.exists(DEBUG_DIR):
+                    os.makedirs(DEBUG_DIR)
+                
+                # Save the raw image directly as requested
+                orig_img.save(preprocessed_path)
+                print(f"      ✅ Successfully generated raw image: {os.path.basename(preprocessed_path)}")
+                doc.close()
+            except Exception as e:
+                print(f"      ❌ Failed to generate preprocessed image: {e}")
+                continue
 
         print(f"\n{'#'*60}")
         print(f"  PAGE {page_num}")
@@ -648,5 +684,5 @@ if __name__ == "__main__":
     pdf_path = args.pdf
     if pdf_path and not os.path.isabs(pdf_path):
         pdf_path = os.path.join(UPLOADS_DIR, pdf_path)
-
+        print(f"Resolved PDF path: {pdf_path}")
     run_diagnostic(page=args.page, pdf_path=pdf_path)
