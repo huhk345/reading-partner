@@ -162,21 +162,42 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
           let matched = false;
           
           if (normalizedText.length > 0) {
-              let match = normalizedSentences.find((s: { text: string; normalized: string }) => {
+              let match = null;
+              let minDiff = Infinity;
+              
+              for (const s of normalizedSentences) {
+                  let isMatch = false;
                   if (normalizedText.length <= 5) {
-                      return s.normalized === normalizedText;
+                      isMatch = s.normalized === normalizedText;
+                  } else {
+                      isMatch = s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
                   }
-                  return s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
-              });
+                  
+                  if (isMatch) {
+                      const diff = Math.abs(s.normalized.length - normalizedText.length);
+                      if (diff < minDiff) {
+                          minDiff = diff;
+                          match = s;
+                      }
+                      if (minDiff === 0) break;
+                  }
+              }
 
               if (!match && normalizedText.length > 5) {
                   // Fuzzy match for sentences that are almost identical
-                  match = normalizedSentences.find((s: { text: string; normalized: string }) => {
-                      if (Math.abs(s.normalized.length - normalizedText.length) > 2) return false;
+                  let minDist = Infinity;
+                  for (const s of normalizedSentences) {
+                      if (Math.abs(s.normalized.length - normalizedText.length) > 2) continue;
                       const dist = levenshteinDistance(s.normalized, normalizedText);
-                      // Allow 1 char difference for short strings, 2 for longer
-                      return dist <= (normalizedText.length > 10 ? 2 : 1);
-                  });
+                      const maxDist = normalizedText.length > 10 ? 2 : 1;
+                      if (dist <= maxDist) {
+                          if (dist < minDist) {
+                              minDist = dist;
+                              match = s;
+                          }
+                          if (minDist === 0) break;
+                      }
+                  }
               }
 
               if (match) {
@@ -251,6 +272,10 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
              // Try Sequence Match Logic
              const currentWordsTokens = currentWords.map(w => w.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
              
+             let bestSentMatch = null;
+             let maxTokens = -1;
+             let bestMatchIndices: number[] = [];
+
              // Optimization: Scan sentences for sequence match
              for (const sent of normalizedSentences) {
                  if (sent.tokens.length === 0) continue;
@@ -268,6 +293,19 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                  }
                  
                  if (sIdx === sent.tokens.length) {
+                      // Found a sequence match!
+                      // The more tokens matched, the better.
+                      if (sent.tokens.length > maxTokens) {
+                          maxTokens = sent.tokens.length;
+                          bestSentMatch = sent;
+                          bestMatchIndices = matchIndices;
+                      }
+                 }
+             }
+
+             if (bestSentMatch) {
+                      const sent = bestSentMatch;
+                      const matchIndices = bestMatchIndices;
                       // Found a sequence match!
                       // Partition currentWords into Valid/Invalid blocks
                       let currentBlock: WordData[] = [];
@@ -305,8 +343,6 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                       
                       matched = true;
                       currentWords = []; // Consumed all
-                      break; // Stop checking other sentences
-                 }
              }
           }
 
