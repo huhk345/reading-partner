@@ -14,6 +14,8 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 import logging
 import threading
+import hashlib
+from pydantic import BaseModel
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -486,6 +488,32 @@ def generate_tts(text: str, prompt_wav_path: Optional[str] = None, prompt_text: 
     except Exception as e:
         logger.exception(f"TTS generation failed for text: {text[:100]}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+class TTSStatusRequest(BaseModel):
+    texts: List[str]
+
+@app.post("/api/tts/status")
+def tts_status(req: TTSStatusRequest):
+    """
+    Check whether cached TTS audio already exists for each input text.
+
+    Note: This does NOT generate audio; it only checks for existing files produced by TTSEngine.
+    """
+    results = []
+    for text in req.texts or []:
+        # TTSEngine hashes the *raw* text (before preprocessing) to decide the output filename.
+        text_hash = hashlib.md5((text or "").encode()).hexdigest()
+        filename = f"{text_hash}.wav"
+        path = os.path.join(TTS_DIR, filename)
+        ready = os.path.exists(path)
+        results.append(
+            {
+                "text": text,
+                "ready": ready,
+                "audio_url": f"http://localhost:8000/tts/{filename}" if ready else None,
+            }
+        )
+    return {"results": results}
 
 @app.post("/api/tts/light")
 def generate_tts_light(text: str):

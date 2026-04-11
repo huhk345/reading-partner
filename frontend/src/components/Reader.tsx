@@ -28,49 +28,27 @@ function fallbackSpeak(text: string, onComplete?: () => void) {
   window.speechSynthesis.speak(utterance);
 }
 
-function endsWithSentencePunctuation(text: string, abbreviations: string[], inQuotes: boolean): { endsWithPunctuation: boolean, nextInQuotes: boolean } {
-  if (!text) return { endsWithPunctuation: false, nextInQuotes: inQuotes };
+function endsWithSentencePunctuation(text: string, abbreviations: string[]): boolean {
+  if (!text) return false;
 
-  const abbreviationPattern = abbreviations.map(a => `\\b${a.replace(/\./g, '\\.')}`).join('|');
-  const protectedText = text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
+  // Protect periods inside known abbreviations so "Dr." doesn't end a sentence.
+  const protectedText = abbreviations.length > 0
+    ? (() => {
+        const abbreviationPattern = abbreviations.map(a => `\\b${a.replace(/\./g, '\\.')}`).join('|');
+        return text.replace(new RegExp(`(${abbreviationPattern})`, 'g'), m => m.replace(/\./g, '\x00'));
+      })()
+    : text;
 
-  const quoteChars = '"“”';
-  let currentInQuotes = inQuotes;
-  let splitDetected = false;
+  // Ignore trailing quote characters when looking for sentence-ending punctuation.
+  // Examples that should count as sentence-ending: `Hello."`, `What?"`, `Wow!”`
+  const trailingQuoteChars = new Set(['"', '“', '”', '\'', '’']);
+  let i = protectedText.length - 1;
+  while (i >= 0 && trailingQuoteChars.has(protectedText[i])) i--;
 
-  for (let i = 0; i < protectedText.length; i++) {
-    const c = protectedText[i];
-    if (quoteChars.includes(c)) {
-      currentInQuotes = !currentInQuotes;
-    }
+  if (i < 0) return false;
 
-    // Rule: if we encounter ."/?"/!" we should split there
-    if ('.!?…'.includes(c) && i + 1 < protectedText.length && quoteChars.includes(protectedText[i + 1])) {
-      if (currentInQuotes) {
-        // Toggle quotes because the next char is the closing quote
-        currentInQuotes = !currentInQuotes;
-        i++; // skip the quote
-        splitDetected = true;
-      }
-    }
-    // Rule: split outside quotes
-    else if ('.!?…'.includes(c) && !currentInQuotes) {
-      if (i + 1 === protectedText.length || /\s/.test(protectedText[i + 1])) {
-        splitDetected = true;
-      }
-    }
-    
-    if (splitDetected && i < protectedText.length - 1) {
-        // If we detected a split but there's more text in this word, 
-        // we reset splitDetected and continue to see the final state of the word.
-        // But the prompt says "if we ."/?"/!" we should split there otherwise we should look to next".
-        // In the context of Reader.tsx, it's processing word by word.
-        // If a word ends a sentence, we split.
-        splitDetected = false; 
-    }
-  }
-
-  return { endsWithPunctuation: splitDetected, nextInQuotes: currentInQuotes };
+  const last = protectedText[i];
+  return '.!?…'.includes(last);
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -100,6 +78,51 @@ function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
+function normalizeToken(text: string): string {
+  return text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
+
+function fuzzyTokenEquals(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const maxLen = Math.max(a.length, b.length);
+  // Be conservative for very short tokens.
+  const maxDist = maxLen <= 4 ? 1 : maxLen <= 7 ? 1 : 2;
+  return levenshteinDistance(a, b) <= maxDist;
+}
+
+type TokenSpan = { start: number; endExclusive: number; spanLen: number };
+
+function findFuzzyTokenSpanMatch(
+  wordTokens: string[],
+  sentTokens: string[],
+): TokenSpan | null {
+  if (sentTokens.length === 0 || wordTokens.length === 0) return null;
+
+  const matchIndices: number[] = [];
+  let wIdx = 0;
+  let sIdx = 0;
+
+  while (wIdx < wordTokens.length && sIdx < sentTokens.length) {
+    if (fuzzyTokenEquals(wordTokens[wIdx], sentTokens[sIdx])) {
+      matchIndices.push(wIdx);
+      sIdx++;
+    }
+    wIdx++;
+  }
+
+  if (sIdx !== sentTokens.length) return null;
+
+  const start = matchIndices[0];
+  const endExclusive = matchIndices[matchIndices.length - 1] + 1;
+  const spanLen = endExclusive - start;
+
+  // Prevent matching a sentence across a much larger region (often indicates we crossed sentence boundaries).
+  if (spanLen > sentTokens.length + 3) return null;
+
+  return { start, endExclusive, spanLen };
+}
+
 // Set up worker for react-pdf
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -108,15 +131,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 interface WordOverlayProps {
   pageData?: PageData;
+  pageNumber: number;
   renderedWidth: number;
   renderedHeight: number;
   onWordClick: (word: string, sentenceText?: string) => void;
   onSentencePlay: (sentenceText: string) => void;
   sentences?: Sentence[];
   currentlyPlayingSentence: string | null;
+  onPageSentencesChange?: (pageNumber: number, sentenceTexts: string[]) => void;
+  isReadingPage?: boolean;
 }
 
-function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onSentencePlay, sentences, currentlyPlayingSentence }: WordOverlayProps) {
+function WordOverlay({ pageData, pageNumber, renderedWidth, renderedHeight, onWordClick, onSentencePlay, sentences, currentlyPlayingSentence, onPageSentencesChange, isReadingPage }: WordOverlayProps) {
   const [hoveredSentence, setHoveredSentence] = useState<{
     text: string;
     backendSentenceText: string;
@@ -130,12 +156,15 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
     const groups: { text: string; words: WordData[], isValid: boolean, backendSentenceText: string }[] = [];
     let currentWords: WordData[] = [];
-    let inQuotes = false;
+    // Sentence grouping is word-based; we treat punctuation as sentence-ending even if it's followed
+    // by closing quotes (e.g., `."`, `?”`). So we don't track quote state here.
     
     const normalizedSentences = (sentences || []).map((s: Sentence) => ({
       text: s.text,
-      normalized: s.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(),
-      tokens: s.text.match(/[a-zA-Z0-9]+/g)?.map(t => t.toLowerCase()) || []
+      normalized: normalizeToken(s.text),
+      // IMPORTANT: tokenization must match the OCR word normalization logic below.
+      // We intentionally treat "robot's" as a single token "robots" (not ["robot","s"]).
+      tokens: s.text.split(/\s+/).map(normalizeToken).filter(Boolean),
     }));
     
     const abbreviations = [
@@ -147,46 +176,106 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
       'U.S.', 'U.K.', 'E.U.',
     ];
 
+    // As we successfully match OCR word groups to backend sentences, advance this pointer so that
+    // matches prefer the next expected sentence (keeps matching stable and ordered).
+    let nextSentenceIdx = 0;
+
     pageData.words.forEach((word, idx) => {
       currentWords.push(word);
       const trimmedText = word.text.replace(/\s+$/, '');
-      const { endsWithPunctuation, nextInQuotes } = endsWithSentencePunctuation(trimmedText, abbreviations, inQuotes);
-      inQuotes = nextInQuotes;
+      const endsWithPunctuation = endsWithSentencePunctuation(trimmedText, abbreviations);
 
       if (endsWithPunctuation || idx === pageData.words.length - 1) {
         let processing = true;
+        // If OCR missed punctuation, a single `currentWords` chunk can contain multiple sentences.
+        // Once we match the first sentence inside this chunk, subsequent matches MUST be consecutive
+        // in the backend `sentences` list (no skipping), otherwise we mark the remainder as unmatched.
+        let expectedSentenceIdx: number | null = null;
+
         while (processing && currentWords.length > 0) {
           const text = currentWords.map(w => w.text).join(' ');
-          const normalizedText = text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const normalizedText = normalizeToken(text);
+          const currentWordsTokens = currentWords.map(w => normalizeToken(w.text));
           
           let matched = false;
           
           if (normalizedText.length > 0) {
               let match = null;
-              let minDiff = Infinity;
-              
-              for (const s of normalizedSentences) {
+              let matchIdx: number | null = null;
+              let tokenSpan: TokenSpan | null = null;
+              // When OCR misses sentence-ending punctuation, `currentWords` can contain multiple backend
+              // sentences. In that case, prefer matches that occur earliest (ideally at the start) so we
+              // can split off the first sentence deterministically.
+              let bestPos = Infinity;
+              let bestDiff = Infinity;
+
+              const getCandidateAtIndex = (sIdx: number): { sIdx: number; pos: number; diff: number; span: TokenSpan | null } | null => {
+                  const s = normalizedSentences[sIdx];
+                  if (!s) return null;
+
                   let isMatch = false;
                   if (normalizedText.length <= 5) {
                       isMatch = s.normalized === normalizedText;
                   } else {
                       isMatch = s.normalized.includes(normalizedText) || normalizedText.includes(s.normalized);
                   }
-                  
+
                   if (isMatch) {
                       const diff = Math.abs(s.normalized.length - normalizedText.length);
-                      if (diff < minDiff) {
-                          minDiff = diff;
-                          match = s;
+                      const pos = normalizedText.includes(s.normalized)
+                        ? normalizedText.indexOf(s.normalized)
+                        : 0;
+                      return { sIdx, pos, diff, span: null };
+                  }
+
+                  const span = findFuzzyTokenSpanMatch(currentWordsTokens, s.tokens);
+                  if (span) {
+                      // Token-span match handles OCR typos like "ang" vs "and" or "stree" vs "street".
+                      const pos = span.start;
+                      const diff = Math.abs(span.spanLen - s.tokens.length);
+                      return { sIdx, pos, diff, span };
+                  }
+
+                  return null;
+              };
+
+              const considerCandidate = (cand: { sIdx: number; pos: number; diff: number; span: TokenSpan | null } | null) => {
+                  if (!cand) return;
+                  if (cand.pos < bestPos || (cand.pos === bestPos && cand.diff < bestDiff)) {
+                      bestPos = cand.pos;
+                      bestDiff = cand.diff;
+                      match = normalizedSentences[cand.sIdx];
+                      matchIdx = cand.sIdx;
+                      tokenSpan = cand.span;
+                  }
+              };
+
+              if (expectedSentenceIdx !== null) {
+                  // Enforce strict consecutiveness while splitting a multi-sentence OCR chunk:
+                  // only the *next* backend sentence is allowed to match.
+                  considerCandidate(getCandidateAtIndex(expectedSentenceIdx));
+              } else {
+                  // Prefer matching at/after the next expected sentence index to keep ordering stable.
+                  for (let sIdx = nextSentenceIdx; sIdx < normalizedSentences.length; sIdx++) {
+                      considerCandidate(getCandidateAtIndex(sIdx));
+                      if (bestPos === 0 && bestDiff === 0) break;
+                  }
+                  // If we still didn't find anything, allow a full scan as a resync mechanism.
+                  if (!match && nextSentenceIdx > 0) {
+                      for (let sIdx = 0; sIdx < nextSentenceIdx; sIdx++) {
+                          considerCandidate(getCandidateAtIndex(sIdx));
+                          if (bestPos === 0 && bestDiff === 0) break;
                       }
-                      if (minDiff === 0) break;
                   }
               }
 
               if (!match && normalizedText.length > 5) {
                   // Fuzzy match for sentences that are almost identical
                   let minDist = Infinity;
-                  for (const s of normalizedSentences) {
+                  const startIdx: number = expectedSentenceIdx !== null ? expectedSentenceIdx : 0;
+                  const endIdx: number = expectedSentenceIdx !== null ? expectedSentenceIdx + 1 : normalizedSentences.length;
+                  for (let sIdx: number = startIdx; sIdx < endIdx; sIdx++) {
+                      const s = normalizedSentences[sIdx];
                       if (Math.abs(s.normalized.length - normalizedText.length) > 2) continue;
                       const dist = levenshteinDistance(s.normalized, normalizedText);
                       const maxDist = normalizedText.length > 10 ? 2 : 1;
@@ -194,6 +283,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                           if (dist < minDist) {
                               minDist = dist;
                               match = s;
+                              matchIdx = sIdx;
                           }
                           if (minDist === 0) break;
                       }
@@ -204,7 +294,39 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                   // Check if we have a superset (we have more text than the match)
                   // AND the match is contained within our text.
                   // We also handle exact match here if we relax the length check, but strictly splitting is for superset.
-                  if (normalizedText.includes(match.normalized) && normalizedText.length > match.normalized.length) {
+                  const span = tokenSpan as unknown as TokenSpan | null;
+                  if (span && currentWords.length > span.endExclusive) {
+                      const startIndex = span.start;
+                      const endIndex = span.endExclusive;
+                      const prefix = currentWords.slice(0, startIndex);
+                      const target = currentWords.slice(startIndex, endIndex);
+                      const suffix = currentWords.slice(endIndex);
+
+                      if (prefix.length > 0) {
+                          groups.push({
+                              text: prefix.map(w => w.text).join(' '),
+                              words: prefix,
+                              isValid: false,
+                              backendSentenceText: prefix.map(w => w.text).join(' ')
+                          });
+                      }
+
+                      groups.push({
+                          text: target.map(w => w.text).join(' '),
+                          words: target,
+                          isValid: true,
+                          backendSentenceText: match.text
+                      });
+
+                      if (matchIdx !== null) {
+                          expectedSentenceIdx = matchIdx + 1;
+                          nextSentenceIdx = Math.max(nextSentenceIdx, matchIdx + 1);
+                      }
+
+                      currentWords = suffix;
+                      matched = true;
+                      // Continue loop to process suffix
+                  } else if (normalizedText.includes(match.normalized) && normalizedText.length > match.normalized.length) {
                       const matchStart = normalizedText.indexOf(match.normalized);
                       const matchEnd = matchStart + match.normalized.length;
                       
@@ -249,6 +371,11 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                           isValid: true,
                           backendSentenceText: match.text
                       });
+
+                      if (matchIdx !== null) {
+                          expectedSentenceIdx = matchIdx + 1;
+                          nextSentenceIdx = Math.max(nextSentenceIdx, matchIdx + 1);
+                      }
                       
                       currentWords = suffix;
                       matched = true;
@@ -261,6 +388,12 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                           isValid: true,
                           backendSentenceText: match.text
                       });
+
+                      if (matchIdx !== null) {
+                          // For a single-sentence match, advance the global pointer.
+                          nextSentenceIdx = Math.max(nextSentenceIdx, matchIdx + 1);
+                      }
+
                       currentWords = [];
                       processing = false;
                       matched = true;
@@ -269,9 +402,22 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
           }
 
           if (!matched) {
+             // If we are in the middle of splitting a multi-sentence OCR chunk, but the next expected
+             // backend sentence doesn't match, do NOT try to match arbitrary other sentences.
+             // Mark the remainder as unmatched to avoid non-consecutive sentence alignment.
+             if (expectedSentenceIdx !== null) {
+                groups.push({
+                  text,
+                  words: [...currentWords],
+                  isValid: false,
+                  backendSentenceText: text
+                });
+                currentWords = [];
+                processing = false;
+                continue;
+             }
+
              // Try Sequence Match Logic
-             const currentWordsTokens = currentWords.map(w => w.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
-             
              let bestSentMatch = null;
              let maxTokens = -1;
              let bestMatchIndices: number[] = [];
@@ -285,7 +431,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
                  const matchIndices: number[] = [];
                  
                  while (wIdx < currentWordsTokens.length && sIdx < sent.tokens.length) {
-                     if (currentWordsTokens[wIdx] === sent.tokens[sIdx]) {
+                     if (fuzzyTokenEquals(currentWordsTokens[wIdx], sent.tokens[sIdx])) {
                          matchIndices.push(wIdx);
                          sIdx++;
                      }
@@ -362,6 +508,21 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
     });
     return groups;
   }, [pageData, sentences]);
+
+  // Expose the ordered list of backend sentence texts for this page to the parent.
+  useEffect(() => {
+    if (!onPageSentencesChange) return;
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const g of sentenceGroups) {
+      if (!g.isValid) continue;
+      const t = g.backendSentenceText;
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      ordered.push(t);
+    }
+    onPageSentencesChange(pageNumber, ordered);
+  }, [sentenceGroups, onPageSentencesChange, pageNumber]);
 
   const activeSentenceWords = useMemo(() => {
     if (hoveredSentence) {
@@ -542,7 +703,7 @@ function WordOverlay({ pageData, renderedWidth, renderedHeight, onWordClick, onS
 
       {/* Sentences Hover Action Button */}
       <AnimatePresence>
-        {(hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.backendSentenceText === currentlyPlayingSentence))) && (
+        {!isReadingPage && (hoveredSentence || (currentlyPlayingSentence && sentenceGroups.some(g => g.backendSentenceText === currentlyPlayingSentence))) && (
           <motion.div
             initial={{ 
               opacity: 0, 
@@ -678,6 +839,11 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [isReadingWord, setIsReadingWord] = useState(false);
   const [isAddingToVocab, setIsAddingToVocab] = useState(false);
   const [currentlyPlayingSentence, setCurrentlyPlayingSentence] = useState<string | null>(null);
+  const [pageSentences, setPageSentences] = useState<Record<number, string[]>>({});
+  const [pageSentenceAudioUrls, setPageSentenceAudioUrls] = useState<Record<string, string>>({});
+  const [isCheckingPageTts, setIsCheckingPageTts] = useState(false);
+  const [isPageTtsReady, setIsPageTtsReady] = useState(false);
+  const [isReadingPage, setIsReadingPage] = useState(false);
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -693,6 +859,9 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cancelReadPageRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentPlaybackResolveRef = useRef<(() => void) | null>(null);
 
   const lastFetchedBookId = useRef<number | null>(null);
 
@@ -804,6 +973,102 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         pageEl.scrollIntoView({ behavior: 'smooth' });
     }
   };
+
+  const handlePageSentencesChange = useCallback((pageNumber: number, sentenceTexts: string[]) => {
+    setPageSentences(prev => {
+      const existing = prev[pageNumber];
+      if (
+        existing &&
+        existing.length === sentenceTexts.length &&
+        existing.every((t, i) => t === sentenceTexts[i])
+      ) {
+        return prev;
+      }
+      return { ...prev, [pageNumber]: sentenceTexts };
+    });
+  }, []);
+
+  const stopPlayback = useCallback(() => {
+    cancelReadPageRef.current = true;
+    if (currentAudioRef.current) {
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      } catch {
+        // ignore
+      }
+      currentAudioRef.current = null;
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    if (currentPlaybackResolveRef.current) {
+      currentPlaybackResolveRef.current();
+      currentPlaybackResolveRef.current = null;
+    }
+    setIsReadingPage(false);
+    setCurrentlyPlayingSentence(null);
+  }, []);
+
+  // If the user navigates back to the library (Reader unmounts), stop any audio immediately.
+  useEffect(() => {
+    return () => {
+      stopPlayback();
+    };
+  }, [stopPlayback]);
+
+  // If the user changes pages, stop any in-progress "read this page" playback.
+  useEffect(() => {
+    stopPlayback();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage]);
+
+  // Check whether all sentences on the current page already have cached TTS audio.
+  useEffect(() => {
+    if (book?.type !== 'pdf') return;
+
+    const texts = pageSentences[currentPage] || [];
+    if (texts.length === 0) {
+      setIsPageTtsReady(false);
+      setPageSentenceAudioUrls({});
+      return;
+    }
+
+    let cancelled = false;
+    setIsCheckingPageTts(true);
+
+    api.post('/api/tts/status', { texts })
+      .then((res) => {
+        if (cancelled) return;
+        const results: Array<{ text: string; ready: boolean; audio_url?: string | null }> = res.data?.results || [];
+
+        const urlMap: Record<string, string> = {};
+        let allReady = results.length === texts.length;
+        for (const r of results) {
+          if (!r?.ready) allReady = false;
+          if (r?.ready && r.audio_url) {
+            urlMap[r.text] = r.audio_url;
+          }
+        }
+
+        setPageSentenceAudioUrls(urlMap);
+        setIsPageTtsReady(allReady);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Error checking page TTS status:', err);
+        setIsPageTtsReady(false);
+        setPageSentenceAudioUrls({});
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsCheckingPageTts(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [book?.type, currentPage, pageSentences]);
 
   const speak = useCallback(async (text: string, wordId?: number, audioUrl?: string, onComplete?: () => void) => {
     if (wordId) {
@@ -920,9 +1185,96 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     await lookupWord(lemmaWord, lastSentenceId, true);
   };
 
+  const playCachedSentenceAudio = useCallback((sentenceText: string, audioUrl: string) => {
+    return new Promise<void>((resolve) => {
+      // Allow stopPlayback() to interrupt the current wait.
+      currentPlaybackResolveRef.current = resolve;
+
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+
+      const cleanup = () => {
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        if (currentPlaybackResolveRef.current === resolve) currentPlaybackResolveRef.current = null;
+      };
+
+      audio.onended = () => {
+        cleanup();
+        resolve();
+      };
+      audio.onerror = () => {
+        // Audio element is no longer usable, but keep the resolve ref so stopPlayback can interrupt.
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        // Fallback to browser speech synthesis if the file fails to play.
+        fallbackSpeak(sentenceText, () => {
+          cleanup();
+          resolve();
+        });
+      };
+
+      audio.play().catch(() => {
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        fallbackSpeak(sentenceText, () => {
+          cleanup();
+          resolve();
+        });
+      });
+    });
+  }, []);
+
+  const handleReadCurrentPage = useCallback(async () => {
+    if (book?.type !== 'pdf') return;
+    if (!isPageTtsReady) return;
+
+    const texts = pageSentences[currentPage] || [];
+    if (texts.length === 0) return;
+
+    stopPlayback();
+    cancelReadPageRef.current = false;
+    setIsReadingPage(true);
+
+    try {
+      for (const sentenceText of texts) {
+        if (cancelReadPageRef.current) break;
+        const url = pageSentenceAudioUrls[sentenceText];
+        if (!url) break;
+        setCurrentlyPlayingSentence(sentenceText);
+        await playCachedSentenceAudio(sentenceText, url);
+        setCurrentlyPlayingSentence(null);
+      }
+    } finally {
+      setIsReadingPage(false);
+      setCurrentlyPlayingSentence(null);
+    }
+  }, [
+    book?.type,
+    currentPage,
+    isPageTtsReady,
+    pageSentences,
+    pageSentenceAudioUrls,
+    playCachedSentenceAudio,
+    stopPlayback,
+  ]);
+
   const handleSentencePlay = async (sentenceText: string) => {
+    // If the sentence belongs to the current page and we already have cached audio,
+    // prefer playing that file (no backend generation).
+    const cachedUrl = pageSentenceAudioUrls[sentenceText];
+    if (cachedUrl) {
+      stopPlayback();
+      cancelReadPageRef.current = false;
+      setCurrentlyPlayingSentence(sentenceText);
+      try {
+        await playCachedSentenceAudio(sentenceText, cachedUrl);
+      } finally {
+        setCurrentlyPlayingSentence(null);
+      }
+      return;
+    }
+
     setCurrentlyPlayingSentence(sentenceText);
     try {
+      // NOTE: speak() returns after starting playback; state is cleared via onComplete.
       await speak(sentenceText, undefined, undefined, () => {
         setCurrentlyPlayingSentence(null);
       });
@@ -1036,12 +1388,15 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                     {renderedPages[index] && (
                         <WordOverlay 
                             pageData={book.pages_data?.[index]}
+                            pageNumber={index + 1}
                             renderedWidth={renderedPages[index].width}
                             renderedHeight={renderedPages[index].height}
                             onWordClick={(word, text) => handleWordClick(word, undefined, text)}
                             onSentencePlay={handleSentencePlay}
                             sentences={book.sentences}
                             currentlyPlayingSentence={currentlyPlayingSentence}
+                            onPageSentencesChange={handlePageSentencesChange}
+                            isReadingPage={isReadingPage}
                         />
                     )}
 
@@ -1095,38 +1450,40 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                         </span>
                       );
                     })}
-                    <div className={`absolute -top-12 left-0 pt-6 pointer-events-auto z-10 transition-all duration-300 ${
-                      isPlaying
-                        ? 'opacity-100 translate-y-0'
-                        : currentlyPlayingSentence
-                          ? 'opacity-0 pointer-events-none'
-                          : 'opacity-0 translate-y-2 group-hover/sentence:opacity-100 group-hover/sentence:translate-y-0'
-                    }`}>
-                      <button 
-                        onClick={() => handleSentencePlay(sentence.text)}
-                        className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 whitespace-nowrap border border-white/20 backdrop-blur-sm ${
-                          isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
-                        }`}
-                      >
-                        {isPlaying ? (
-                          <div className="flex items-center gap-0.5 h-3">
-                            {[1, 2, 3].map((i) => (
-                              <motion.div
-                                key={i}
-                                animate={{ height: [3, 12, 3] }}
-                                transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
-                                className="w-0.5 bg-white rounded-full"
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <Play className="w-4 h-4 text-white fill-white group-hover:scale-110 transition-transform" />
-                        )}
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-white">
-                          {isPlaying ? 'Reading...' : 'Read Sentence'}
-                        </span>
-                      </button>
-                    </div>
+                    {!isReadingPage && (
+                      <div className={`absolute -top-12 left-0 pt-6 pointer-events-auto z-10 transition-all duration-300 ${
+                        isPlaying
+                          ? 'opacity-100 translate-y-0'
+                          : currentlyPlayingSentence
+                            ? 'opacity-0 pointer-events-none'
+                            : 'opacity-0 translate-y-2 group-hover/sentence:opacity-100 group-hover/sentence:translate-y-0'
+                      }`}>
+                        <button 
+                          onClick={() => handleSentencePlay(sentence.text)}
+                          className={`p-2 rounded-xl shadow-xl transition-all flex items-center gap-2 px-4 whitespace-nowrap border border-white/20 backdrop-blur-sm ${
+                            isPlaying ? 'bg-green-600 hover:bg-green-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                        >
+                          {isPlaying ? (
+                            <div className="flex items-center gap-0.5 h-3">
+                              {[1, 2, 3].map((i) => (
+                                <motion.div
+                                  key={i}
+                                  animate={{ height: [3, 12, 3] }}
+                                  transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                                  className="w-0.5 bg-white rounded-full"
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <Play className="w-4 h-4 text-white fill-white group-hover:scale-110 transition-transform" />
+                          )}
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+                            {isPlaying ? 'Reading...' : 'Read Sentence'}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </span>
                 );
               }) : (
@@ -1181,6 +1538,28 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
           </div>
           
           <div className="flex items-center gap-4">
+            {isReadingPage && (
+              <button
+                onClick={stopPlayback}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all text-xs font-bold uppercase"
+                title="Stop reading this page"
+              >
+                <div className="w-3.5 h-3.5 bg-white rounded-sm" />
+                Stop
+              </button>
+            )}
+
+            {isPageTtsReady && !isReadingPage && (
+              <button
+                onClick={handleReadCurrentPage}
+                disabled={isCheckingPageTts}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all text-xs font-bold uppercase disabled:opacity-50"
+                title="Read all sentences on this page"
+              >
+                <Play className="w-3.5 h-3.5 text-white fill-white" />
+                Read This Page
+              </button>
+            )}
             <button
               onClick={handleReparse}
               disabled={reparsing}
