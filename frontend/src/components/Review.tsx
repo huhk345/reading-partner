@@ -13,7 +13,7 @@ import type {
   NodeObject,
 } from 'react-force-graph-3d';
 import { api } from '../lib/api';
-import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy, Play, LayoutGrid, Orbit, X } from 'lucide-react';
+import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy, Play, LayoutGrid, Orbit } from 'lucide-react';
 import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats, VocabGraphResponse, VocabGraphNode, VocabGraphLink } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
@@ -639,16 +639,36 @@ function VocabGraph3DView({
     setHighlightLinks(constellation.links);
 
     const dist = 340;
+
     const nx = node.x ?? 0;
     const ny = node.y ?? 0;
     const nz = node.z ?? 0;
     const len = Math.hypot(nx, ny, nz) || 1;
 
-    fg.cameraPosition(
-      { x: nx + (nx / len) * dist, y: ny + (ny / len) * dist, z: nz + (nz / len) * dist },
-      { x: nx, y: ny, z: nz },
-      900
+    const targetCam = {
+      x: nx + (nx / len) * dist,
+      y: ny + (ny / len) * dist,
+      z: nz + (nz / len) * dist,
+    };
+
+    // current camera position (three.js camera)
+    const cam = fg.camera();
+    const curCam = cam?.position ?? { x: 0, y: 0, z: 0 };
+
+    // how far we move the camera
+    const moveDist = Math.hypot(
+      targetCam.x - curCam.x,
+      targetCam.y - curCam.y,
+      targetCam.z - curCam.z
     );
+
+    // map distance -> duration (tune these numbers)
+    const minMs = 900;
+    const maxMs = 3600;
+    const msPerUnit = 1.6; // e.g. 1.6ms per world-unit
+    const duration = Math.max(minMs, Math.min(maxMs, moveDist * msPerUnit));
+
+    fg.cameraPosition(targetCam, { x: nx, y: ny, z: nz }, duration);
   }, [buildConstellation]);
 
   const nodeObject = useCallback((node: VocabGraphNode) => {
@@ -961,217 +981,229 @@ function VocabGraph3DView({
         className="absolute right-5 bottom-5 w-[380px] pointer-events-none"
         style={{ top: (topOffset ?? 0) + 20 }}
       >
-        <AnimatePresence initial={false}>
-          {selectedNode && (
-            <motion.div
-              key={selectedNode.id}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.18 }}
-              className="h-full pointer-events-auto rounded-3xl border border-white/12 bg-black/35 backdrop-blur-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col"
-            >
-              <div className="px-5 py-4 border-b border-white/10 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
-                      {selectedNode.type}
+        <div className="h-full pointer-events-auto rounded-3xl border border-white/12 bg-black/35 backdrop-blur-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col">
+            {selectedNode ? (
+              <>
+                <div className="px-5 py-4 border-b border-white/10 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
+                        {selectedNode.type}
+                      </div>
+                      <div className="w-1 h-1 rounded-full bg-white/25" />
+                      <div className="text-[10px] font-bold text-white/50">
+                        {neighborsById.get(selectedNode.id)?.size ?? 0} links
+                      </div>
                     </div>
-                    <div className="w-1 h-1 rounded-full bg-white/25" />
-                    <div className="text-[10px] font-bold text-white/50">
-                      {neighborsById.get(selectedNode.id)?.size ?? 0} links
-                    </div>
-                  </div>
-                  <div
-                    className={`mt-1 text-white font-extrabold leading-snug ${
-                      selectedNode.type === 'sentence'
-                        ? 'text-base whitespace-normal break-words'
-                        : 'text-lg truncate'
-                    }`}
-                  >
-                    {selectedNode.label}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {(selectedNode.type === 'word' || selectedNode.type === 'sentence') && (
-                    <button
-                      type="button"
-                      onClick={handlePlaySelected}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                      aria-label="Play"
-                      title="Play"
+                    <div
+                      className={`mt-1 text-white font-extrabold leading-snug ${
+                        selectedNode.type === 'sentence'
+                          ? 'text-base whitespace-normal break-words'
+                          : 'text-lg truncate'
+                      }`}
                     >
-                      <Play className="w-4 h-4" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedNodeId(null)}
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                    aria-label="Close details"
-                    title="Close"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                      {selectedNode.label}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {(selectedNode.type === 'word' || selectedNode.type === 'sentence') && (
+                      <button
+                        type="button"
+                        onClick={handlePlaySelected}
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        aria-label="Play"
+                        title="Play"
+                      >
+                        <Play className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
-                {selectedNode.type === 'word' && (
-                  <>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                        Meaning
-                      </div>
-                      <div className="mt-1 text-white/90 leading-relaxed whitespace-pre-line">
-                        {selectedWordMeaning ? selectedWordMeaning : <span className="text-white/50">No meaning saved.</span>}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between">
+                <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+                  {selectedNode.type === 'word' && (
+                    <>
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                         <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                          Sentences
+                          Meaning
                         </div>
-                        <div className="text-[11px] font-semibold text-white/45">
-                          {selectedWordSentences.length}
+                        <div className="mt-1 text-white/90 leading-relaxed whitespace-pre-line">
+                          {selectedWordMeaning ? selectedWordMeaning : <span className="text-white/50">No meaning saved.</span>}
                         </div>
                       </div>
-                      <div className="mt-2 space-y-2">
-                        {selectedWordSentences.length === 0 ? (
-                          <div className="text-sm text-white/50">No connected sentences.</div>
-                        ) : (
-                          selectedWordSentences.map((s) => (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => focusNode(s)}
-                              className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
-                            >
-                              <div className="text-sm text-white/80 leading-relaxed">
-                                “{s.label}”
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
 
-                {selectedNode.type === 'sentence' && (
-                  <>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                          Words
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                            Sentences
+                          </div>
+                          <div className="text-[11px] font-semibold text-white/45">
+                            {selectedWordSentences.length}
+                          </div>
                         </div>
-                        <div className="text-[11px] font-semibold text-white/45">
-                          {selectedSentenceWords.length}
+                        <div className="mt-2 space-y-2">
+                          {selectedWordSentences.length === 0 ? (
+                            <div className="text-sm text-white/50">No connected sentences.</div>
+                          ) : (
+                            selectedWordSentences.map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => focusNode(s)}
+                                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
+                              >
+                                <div className="text-sm text-white/80 leading-relaxed">
+                                  “{s.label}”
+                                </div>
+                              </button>
+                            ))
+                          )}
                         </div>
                       </div>
-                      <div className="mt-2 space-y-2">
-                        {selectedSentenceWords.length === 0 ? (
-                          <div className="text-sm text-white/50">No connected words.</div>
-                        ) : (
-                          selectedSentenceWords.map((w) => (
+                    </>
+                  )}
+
+                  {selectedNode.type === 'sentence' && (
+                    <>
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                            Words
+                          </div>
+                          <div className="text-[11px] font-semibold text-white/45">
+                            {selectedSentenceWords.length}
+                          </div>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {selectedSentenceWords.length === 0 ? (
+                            <div className="text-sm text-white/50">No connected words.</div>
+                          ) : (
+                            selectedSentenceWords.map((w) => (
+                              <button
+                                key={w.id}
+                                type="button"
+                                onClick={() => focusNode(w)}
+                                className="w-full text-left rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
+                              >
+                                <div className="text-white font-bold truncate">
+                                  {w.label}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                          Book
+                        </div>
+                        <div className="mt-2">
+                          {selectedSentenceBook ? (
                             <button
-                              key={w.id}
                               type="button"
-                              onClick={() => focusNode(w)}
+                              onClick={() => focusNode(selectedSentenceBook)}
                               className="w-full text-left rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
                             >
-                              <div className="text-white font-bold truncate">
-                                {w.label}
+                              <div className="text-white font-bold">
+                                {selectedSentenceBook.label}
+                              </div>
+                              <div className="text-xs text-white/50 mt-0.5">
+                                Click to open book details
                               </div>
                             </button>
-                          ))
-                        )}
+                          ) : (
+                            <div className="text-sm text-white/50">No connected book.</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    </>
+                  )}
 
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                        Book
-                      </div>
-                      <div className="mt-2">
-                        {selectedSentenceBook ? (
-                          <button
-                            type="button"
-                            onClick={() => focusNode(selectedSentenceBook)}
-                            className="w-full text-left rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
-                          >
-                            <div className="text-white font-bold">
-                              {selectedSentenceBook.label}
+                  {selectedNode.type === 'book' && (
+                    <>
+                      {selectedNode.image && (
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 flex gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={selectedNode.image}
+                            alt={selectedNode.label}
+                            className="w-16 h-20 rounded-xl object-cover border border-white/10"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                              Book
                             </div>
-                            <div className="text-xs text-white/50 mt-0.5">
-                              Click to open book details
+                            <div className="mt-1 text-white font-extrabold leading-snug">
+                              {selectedNode.label}
                             </div>
-                          </button>
-                        ) : (
-                          <div className="text-sm text-white/50">No connected book.</div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
+                          </div>
+                        </div>
+                      )}
 
-                {selectedNode.type === 'book' && (
-                  <>
-                    {selectedNode.image && (
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 flex gap-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={selectedNode.image}
-                          alt={selectedNode.label}
-                          className="w-16 h-20 rounded-xl object-cover border border-white/10"
-                        />
-                        <div className="min-w-0">
+                      <div>
+                        <div className="flex items-center justify-between">
                           <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                            Book
+                            Sentences
                           </div>
-                          <div className="mt-1 text-white font-extrabold leading-snug">
-                            {selectedNode.label}
+                          <div className="text-[11px] font-semibold text-white/45">
+                            {selectedBookSentences.length}
                           </div>
                         </div>
-                      </div>
-                    )}
 
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                          Sentences
-                        </div>
-                        <div className="text-[11px] font-semibold text-white/45">
-                          {selectedBookSentences.length}
+                        <div className="mt-2 space-y-2">
+                          {selectedBookSentences.length === 0 ? (
+                            <div className="text-sm text-white/50">No connected sentences.</div>
+                          ) : (
+                            selectedBookSentences.map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => focusNode(s)}
+                                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
+                              >
+                                <div className="text-sm text-white/80 leading-relaxed">
+                                  “{s.label}”
+                                </div>
+                              </button>
+                            ))
+                          )}
                         </div>
                       </div>
-
-                      <div className="mt-2 space-y-2">
-                        {selectedBookSentences.length === 0 ? (
-                          <div className="text-sm text-white/50">No connected sentences.</div>
-                        ) : (
-                          selectedBookSentences.map((s) => (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => focusNode(s)}
-                              className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
-                            >
-                              <div className="text-sm text-white/80 leading-relaxed">
-                                “{s.label}”
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="px-5 py-4 border-b border-white/10 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
+                      details
                     </div>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                    <div className="mt-1 text-white font-extrabold text-lg leading-snug">
+                      Select a node
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto px-5 py-4 space-y-3">
+                  <div className="text-sm text-white/75 leading-relaxed">
+                    Click any word, sentence, or book to see its connections here.
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                      Tips
+                    </div>
+                    <ul className="mt-2 text-sm text-white/70 space-y-1 list-disc pl-5">
+                      <li>Drag to orbit the camera</li>
+                      <li>Scroll / trackpad pinch to zoom</li>
+                      <li>Click empty space to clear highlights</li>
+                    </ul>
+                  </div>
+                </div>
+              </>
+            )}
+        </div>
       </div>
     </div>
   );
@@ -1181,6 +1213,7 @@ export default function Review({ onBack }: ReviewProps) {
   const [reviews, setReviews] = useState<VocabReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'wall' | 'graph' | 'game'>('wall');
+  const [graphSceneReady, setGraphSceneReady] = useState(false);
   const [gameSession, setGameSession] = useState<GameSession>({
     currentLevel: 1,
     cumulativeScore: 0,
@@ -1269,6 +1302,11 @@ export default function Review({ onBack }: ReviewProps) {
     };
   }, []);
 
+  // Avoid mounting the heavy 3D graph during the mode transition animation (prevents FPS drops).
+  useEffect(() => {
+    if (mode === 'graph') setGraphSceneReady(false);
+  }, [mode]);
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-24 gap-6">
       <div className="relative">
@@ -1315,21 +1353,32 @@ export default function Review({ onBack }: ReviewProps) {
 
   const renderModeToggle = () => {
     if (loading || reviews.length === 0 || mode === 'game') return null;
+    const isGraph = mode === 'graph';
     return (
       <div
-        className="fixed right-6 z-40"
+        className="fixed left-6 z-40"
         style={{ top: appHeaderBottom + 12 }}
       >
-        <div className="inline-flex p-0.5 rounded-lg bg-white/90 shadow-sm border border-slate-200/50 backdrop-blur-sm">
+        <div
+          className={`inline-flex p-0.5 rounded-lg shadow-sm backdrop-blur-sm ${
+            isGraph
+              ? 'bg-emerald-500/10 border border-emerald-300/20'
+              : 'bg-emerald-50/90 border border-emerald-200/70'
+          }`}
+        >
           <button
             type="button"
             aria-label="Wall view"
             title="Wall"
             onClick={() => setMode('wall')}
             className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 ${
-              mode === 'wall' 
-                ? 'bg-slate-900 text-white shadow-md scale-105' 
-                : 'text-slate-600 hover:bg-slate-100'
+              mode === 'wall'
+                ? isGraph
+                  ? 'bg-emerald-400/25 text-white shadow-md scale-105'
+                  : 'bg-emerald-600 text-white shadow-md scale-105'
+                : isGraph
+                  ? 'text-emerald-100/75 hover:bg-emerald-400/10'
+                  : 'text-emerald-800 hover:bg-emerald-100'
             }`}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -1340,9 +1389,13 @@ export default function Review({ onBack }: ReviewProps) {
             title="Graph"
             onClick={() => setMode('graph')}
             className={`w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 ${
-              mode === 'graph' 
-                ? 'bg-slate-900 text-white shadow-md scale-105' 
-                : 'text-slate-600 hover:bg-slate-100'
+              mode === 'graph'
+                ? isGraph
+                  ? 'bg-emerald-400/25 text-white shadow-md scale-105'
+                  : 'bg-emerald-600 text-white shadow-md scale-105'
+                : isGraph
+                  ? 'text-emerald-100/75 hover:bg-emerald-400/10'
+                  : 'text-emerald-800 hover:bg-emerald-100'
             }`}
           >
             <Orbit className="w-4 h-4" />
@@ -1683,14 +1736,35 @@ export default function Review({ onBack }: ReviewProps) {
             exit={{ opacity: 0, scale: 1.05 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
             className="fixed inset-0 z-20"
+            onAnimationComplete={() => setGraphSceneReady(true)}
           >
-            <VocabGraph3DView
-              height={graphHeight}
-              fullscreen
-              topOffset={appHeaderBottom}
-              wordMeaningByLabel={wordMeaningByLabel}
-              wordAudioByLabel={wordAudioByLabel}
-            />
+            {graphSceneReady ? (
+              <VocabGraph3DView
+                height={graphHeight}
+                fullscreen
+                topOffset={appHeaderBottom}
+                wordMeaningByLabel={wordMeaningByLabel}
+                wordAudioByLabel={wordAudioByLabel}
+              />
+            ) : (
+              <div className="relative w-full h-full bg-[#000005] overflow-hidden">
+                {/* lightweight "galaxy" backdrop while transition finishes */}
+                <div className="pointer-events-none absolute inset-0">
+                  <div className="absolute -top-40 -left-40 w-[560px] h-[560px] bg-indigo-600/10 blur-3xl rounded-full" />
+                  <div className="absolute -bottom-48 -right-48 w-[680px] h-[680px] bg-cyan-400/10 blur-3xl rounded-full" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/[0.02] to-transparent" />
+                </div>
+
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 rounded-full border-2 border-emerald-200/30 border-t-emerald-300/80 animate-spin" />
+                    <div className="text-sm font-semibold text-white/70">
+                      Loading galaxy…
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
         ) : (
           <motion.div

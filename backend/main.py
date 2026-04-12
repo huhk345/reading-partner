@@ -558,10 +558,17 @@ def get_vocab_graph(db: Session = Depends(get_db)):
         except re.error:
             pattern = None
 
-        for s in candidates:
+        # If strict "whole-token" matching yields no links for a vocab word, fall back to a
+        # simpler substring/`includes` strategy so the word doesn't become an isolated node.
+        # This intentionally ignores the stricter word-boundary logic in the fallback case.
+        strict_matches = [
+            s for s in candidates
+            if (not pattern) or pattern.search(s.text or "")
+        ]
+        matches = strict_matches if strict_matches else candidates
+
+        for s in matches:
             s_text = s.text or ""
-            if pattern and not pattern.search(s_text):
-                continue
 
             s_node_id = f"s_{s.id}"
             # Keep sentence labels short-ish for payload size; UI can show full on hover/click if desired.
