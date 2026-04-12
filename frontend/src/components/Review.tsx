@@ -190,7 +190,6 @@ const ClayWordCard = ({
       if (measureRef.current) {
         // Measure the content and add extra space for padding and borders
         const height = measureRef.current.offsetHeight + 40; // 40px for padding/footer buffer
-        console.log(height,'height')
         setBackHeight(Math.max(300, height));
       }
     };
@@ -919,7 +918,7 @@ function VocabGraph3DView({
             const meaning = wordMeaningByLabel.get(n.label) || '';
             // react-force-graph uses this as HTML for tooltip.
             return meaning
-              ? `<div style="max-width:260px"><div style="font-weight:800;margin-bottom:4px">${n.label}</div><div style="opacity:0.85">${meaning}</div></div>`
+              ? `<div style="max-width:260px"><div style="font-weight:800;margin-bottom:4px">${n.label}</div><div style="opacity:0.85;white-space:pre-line">${meaning}</div></div>`
               : n.label;
           }
           return n.label;
@@ -1024,7 +1023,7 @@ function VocabGraph3DView({
                       <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
                         Meaning
                       </div>
-                      <div className="mt-1 text-white/90 leading-relaxed">
+                      <div className="mt-1 text-white/90 leading-relaxed whitespace-pre-line">
                         {selectedWordMeaning ? selectedWordMeaning : <span className="text-white/50">No meaning saved.</span>}
                       </div>
                     </div>
