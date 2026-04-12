@@ -332,6 +332,24 @@ const ClayWordCard = ({
   );
 };
 
+interface Composer {
+  render: (delta?: number) => void;
+  addPass: (pass: unknown) => void;
+}
+
+interface ForceGraphMethods {
+  cameraPosition: (
+    pos: { x: number; y: number; z: number },
+    lookAt: { x: number; y: number; z: number },
+    ms: number
+  ) => void;
+  scene: () => THREE.Scene;
+  camera: () => THREE.Camera;
+  renderer: () => THREE.WebGLRenderer;
+  postProcessingComposer: () => Composer;
+  zoomToFit: (ms: number, padding: number) => void;
+}
+
 function VocabGraph3DView({
   height,
   fullscreen,
@@ -343,7 +361,7 @@ function VocabGraph3DView({
   wordMeaningByLabel: Map<string, string>;
   wordAudioByLabel: Map<string, { wordId?: number; audioUrl?: string }>;
 }) {
-  const graphRef = useRef<any>(null);
+  const graphRef = useRef<ForceGraphMethods | null>(null);
   const starfieldRef = useRef<THREE.Points | null>(null);
   const bloomAddedRef = useRef(false);
   const coverOverlayHookedRef = useRef(false);
@@ -614,6 +632,7 @@ function VocabGraph3DView({
   }, [buildConstellation]);
 
   const nodeObject = useCallback((node: VocabGraphNode) => {
+    const isHighlighted = selectedNodeId ? highlightNodes.has(node.id) : true;
     const group = new THREE.Group();
     const type = node.type;
 
@@ -638,7 +657,7 @@ function VocabGraph3DView({
       const coverMaterial = new THREE.SpriteMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 1,
+        opacity: isHighlighted ? 1 : 0.25,
         depthWrite: false,
       });
       const coverSprite = new THREE.Sprite(coverMaterial);
@@ -694,11 +713,11 @@ function VocabGraph3DView({
     const material = new THREE.MeshStandardMaterial({
       color: baseColor,
       emissive: baseColor,
-      emissiveIntensity: 1.0,
+      emissiveIntensity: isHighlighted ? 1.0 : 0.2,
       roughness: 0.4,
       metalness: 0.1,
       transparent: true,
-      opacity: 0.95,
+      opacity: isHighlighted ? 0.95 : 0.25,
     });
 
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 20), material);
@@ -715,11 +734,13 @@ function VocabGraph3DView({
       sprite.borderColor = 'rgba(0,0,0,0)';
       sprite.borderWidth = 0;
       sprite.position.set(0, radius + 6, 0);
+      sprite.material.transparent = true;
+      sprite.material.opacity = isHighlighted ? 1 : 0.25;
       group.add(sprite);
     }
 
     return group;
-  }, [degreeById]);
+  }, [degreeById, highlightNodes, selectedNodeId]);
 
   const onNodeClick = useCallback((node: VocabGraphNode) => {
     focusNode(node);
@@ -868,9 +889,10 @@ function VocabGraph3DView({
         graphData={graphData ?? { nodes: [], links: [] }}
         backgroundColor="#000005"
         showNavInfo={false}
-        nodeThreeObject={nodeObject as any}
+        nodeThreeObject={nodeObject}
         // No hover labels for book nodes (titles are removed from the 3D view).
-        nodeLabel={(n: any) => {
+        nodeLabel={(node: object) => {
+          const n = node as VocabGraphNode;
           if (n.type === 'book') return '';
           if (n.type === 'word') {
             const meaning = wordMeaningByLabel.get(n.label) || '';
@@ -882,12 +904,12 @@ function VocabGraph3DView({
           return n.label;
         }}
         linkOpacity={0.35}
-        linkWidth={(l: any) => (highlightLinks.has(getLinkKey(l)) ? 1.2 : 0.35)}
-        linkColor={(l: any) => (highlightLinks.has(getLinkKey(l)) ? 'rgba(255,255,255,0.90)' : 'rgba(150,160,255,0.35)')}
-        linkDirectionalParticles={(l: any) => (highlightLinks.has(getLinkKey(l)) ? 4 : 0)}
+        linkWidth={(l: object) => (highlightLinks.has(getLinkKey(l as VocabGraphLink)) ? 1.2 : 0.35)}
+        linkColor={(l: object) => (highlightLinks.has(getLinkKey(l as VocabGraphLink)) ? 'rgba(255,255,255,0.90)' : 'rgba(150,160,255,0.35)')}
+        linkDirectionalParticles={(l: object) => (highlightLinks.has(getLinkKey(l as VocabGraphLink)) ? 4 : 0)}
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.01}
-        onNodeClick={onNodeClick as any}
+        onNodeClick={onNodeClick as (node: object) => void}
         onBackgroundClick={() => {
           setHighlightNodes(new Set());
           setHighlightLinks(new Set());

@@ -1017,12 +1017,6 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     };
   }, [stopPlayback]);
 
-  // If the user changes pages, stop any in-progress "read this page" playback.
-  useEffect(() => {
-    stopPlayback();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage]);
-
   // Check whether all sentences on the current page already have cached TTS audio.
   useEffect(() => {
     if (book?.type !== 'pdf') return;
@@ -1496,7 +1490,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
       {/* Pagination & Zoom Controls (only for PDF) */}
       {book.type === 'pdf' && (
-        <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10">
+        <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10 flex-shrink-0">
           <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
             <button 
               onClick={() => setScale(prev => Math.max(prev - 0.1, 0.5))}

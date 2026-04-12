@@ -108,7 +108,7 @@ export default function Home() {
         )}
 
         {view === 'reader' && selectedBookId && (
-          <div className="animate-in zoom-in-95 duration-300 h-full">
+          <div className="animate-in zoom-in-95 duration-300 flex-1 h-full flex flex-col">
             <Reader 
               bookId={selectedBookId} 
               onBack={() => setView('library')}
