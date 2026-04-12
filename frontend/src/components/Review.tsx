@@ -337,6 +337,11 @@ interface Composer {
   addPass: (pass: unknown) => void;
 }
 
+interface ForceGraphControls {
+  enableDamping: boolean;
+  dampingFactor: number;
+}
+
 interface ForceGraphMethods {
   cameraPosition: (
     pos: { x: number; y: number; z: number },
@@ -347,6 +352,7 @@ interface ForceGraphMethods {
   camera: () => THREE.Camera;
   renderer: () => THREE.WebGLRenderer;
   postProcessingComposer: () => Composer;
+  controls: () => ForceGraphControls;
   zoomToFit: (ms: number, padding: number) => void;
 }
 
@@ -1591,17 +1597,15 @@ export default function Review({ onBack }: ReviewProps) {
   if (mode === 'graph') {
     const headerOffset = appHeaderBottom;
     const vh = viewportHeight || window.innerHeight;
-    const graphHeight = Math.max(320, vh - headerOffset);
+    // Fill the viewport (100vh). The app header stays on top via z-index.
+    const graphHeight = Math.max(320, vh);
 
     return (
       <>
-        {/* Full-bleed graph canvas under the app header */}
+        {/* Full-bleed graph canvas (100vh). Header overlays on top. */}
         <div
-          className="fixed left-0 right-0 z-20"
-          style={{
-            top: headerOffset,
-            height: graphHeight,
-          }}
+          className="fixed left-0 right-0 top-0 z-20"
+          style={{ height: '100vh' }}
         >
           <VocabGraph3DView
             height={graphHeight}
