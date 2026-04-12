@@ -20,7 +20,7 @@ export default function Home() {
   };
 
   return (
-    <main className="h-screen flex flex-col bg-gradient-to-b from-green-50 to-blue-50 overflow-hidden">
+    <main className="min-h-screen flex flex-col bg-gradient-to-b from-green-50 to-blue-50">
       {/* Decorative floating elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-20 left-10 w-20 h-20 bg-green-200 rounded-full opacity-30 animate-pulse"></div>
@@ -30,7 +30,7 @@ export default function Home() {
       </div>
 
       {/* Playful Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-green-100 z-50 sticky top-0 shadow-sm">
+      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 z-50 sticky top-0 shadow-sm">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div 

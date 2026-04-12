@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Backgroun
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 import shutil
 import os
@@ -9,6 +10,7 @@ import json
 import requests
 from typing import List, Optional
 import datetime
+import re
 from fastapi.staticfiles import StaticFiles
 from urllib.parse import quote
 from dotenv import load_dotenv
@@ -214,6 +216,14 @@ def get_book_url(book):
     elif book.type == "epub" and not filename.lower().endswith(".epub"):
         filename += ".epub"
     return f"http://localhost:8000/uploads/{quote(filename)}"
+
+def get_cover_url(book):
+    """
+    Return a direct URL to the book cover image if available.
+    """
+    if not getattr(book, "cover_image", None):
+        return None
+    return f"http://localhost:8000/uploads/{quote(book.cover_image)}"
 
 @app.get("/api/books")
 def list_books(db: Session = Depends(get_db)):
@@ -458,6 +468,117 @@ def get_all_vocab(db: Session = Depends(get_db)):
                 "sentence": r.sentence
             })
     return result
+
+
+@app.get("/api/vocab/graph")
+def get_vocab_graph(db: Session = Depends(get_db)):
+    """
+    Build a graph of:
+      Word (saved vocab) -> Sentence (all occurrences) -> Book
+
+    Response format matches spec/spec-design-word-wall-3d-graph-view.md.
+    """
+    vocabs = db.query(Vocab).order_by(Vocab.added_time.desc()).all()
+
+    nodes_by_id = {}
+    links_set = set()
+
+    def add_node(node_id: str, node_type: str, label: str, val: int, color: str):
+        if node_id in nodes_by_id:
+            return
+        nodes_by_id[node_id] = {
+            "id": node_id,
+            "type": node_type,
+            "label": label,
+            "val": val,
+            "color": color,
+        }
+
+    def add_link(source: str, target: str):
+        # Use a tuple so we can de-dupe
+        links_set.add((source, target))
+
+    # Build word nodes first
+    words = []
+    for v in vocabs:
+        w = db.query(Word).filter(Word.id == v.word_id).first()
+        if not w:
+            continue
+        words.append(w)
+
+        add_node(
+            node_id=f"w_{w.id}",
+            node_type="word",
+            label=w.word,
+            val=10,
+            color="#FFD700",  # gold
+        )
+
+    # For each word, find all matching sentences and books
+    # Note: we do a SQL LIKE prefilter, then a python regex "whole token" check for precision.
+    # We intentionally avoid `\b` because vocab can contain non-word characters (e.g. "C++"),
+    # and `\b` fails when a token ends with non-word characters.
+    for w in words:
+        word = (w.word or "").strip().lower()
+        if not word:
+            continue
+
+        # SQL prefilter (case-insensitive)
+        candidates = (
+            db.query(Sentence)
+            .filter(func.lower(Sentence.text).like(f"%{word}%"))
+            .all()
+        )
+
+        # Python whole-token check:
+        # - Must NOT have a `\w` character immediately before or after the match.
+        # - This prevents substring matches like: "age" matching inside "image".
+        try:
+            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
+        except re.error:
+            pattern = None
+
+        for s in candidates:
+            s_text = s.text or ""
+            if pattern and not pattern.search(s_text):
+                continue
+
+            s_node_id = f"s_{s.id}"
+            # Keep sentence labels short-ish for payload size; UI can show full on hover/click if desired.
+            s_label = s_text.strip()
+            if len(s_label) > 160:
+                s_label = s_label[:157] + "..."
+
+            add_node(
+                node_id=s_node_id,
+                node_type="sentence",
+                label=s_label,
+                val=5,
+                color="#AAB3FF",  # soft blue-white
+            )
+            add_link(f"w_{w.id}", s_node_id)
+
+            book = db.query(Book).filter(Book.id == s.book_id).first()
+            if not book:
+                continue
+
+            b_node_id = f"b_{book.id}"
+            add_node(
+                node_id=b_node_id,
+                node_type="book",
+                label=book.title or f"Book {book.id}",
+                val=15,
+                color="#00FFFF",  # cyan
+            )
+            # Add cover image URL if available (frontend uses it for book nodes)
+            if book.cover_image:
+                nodes_by_id[b_node_id]["image"] = get_cover_url(book)
+            add_link(s_node_id, b_node_id)
+
+    return {
+        "nodes": list(nodes_by_id.values()),
+        "links": [{"source": s, "target": t} for (s, t) in sorted(links_set)],
+    }
 
 @app.post("/api/vocab/review")
 def submit_review(vocab_id: int, quality: int, db: Session = Depends(get_db)):

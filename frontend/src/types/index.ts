@@ -98,3 +98,31 @@ export type GameSession = {
 export function calcSoundThreshold(matchTarget: number): number {
   return matchTarget - Math.ceil(matchTarget * 0.4);
 }
+
+export type GraphNodeType = 'word' | 'sentence' | 'book';
+
+export interface VocabGraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  val: number;
+  color: string;
+  /**
+   * Optional image URL for the node (used for book cover thumbnails).
+   */
+  image?: string;
+  // react-force-graph-3d will add x/y/z at runtime
+  x?: number;
+  y?: number;
+  z?: number;
+}
+
+export interface VocabGraphLink {
+  source: string | VocabGraphNode;
+  target: string | VocabGraphNode;
+}
+
+export interface VocabGraphResponse {
+  nodes: VocabGraphNode[];
+  links: VocabGraphLink[];
+}

@@ -7,6 +7,7 @@ An SRS (Spaced Repetition System) reading assistant that helps you read English 
 - **Book Reader** - Upload and read PDF/EPUB files with interactive word lookup
 - **Dictionary Lookup** - Click on any word to see definitions, phonetics, and pronunciation
 - **Vocabulary Builder** - Save words to your personal vocabulary list
+- **Word Wall Graph View** - Explore your saved vocab as a 3D “star map” graph (Word → Sentence → Book)
 - **SRS Review** - Spaced repetition复习系统 based on SM2 algorithm (Anki同款)
 - **Text-to-Speech** - Listen to sentences using Web Speech API
 
