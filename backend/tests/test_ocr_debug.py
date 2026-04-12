@@ -20,15 +20,13 @@ What it tests:
 """
 
 import os
-import sys
 import argparse
 import io
 import warnings
-import json
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
-from scipy.ndimage import gaussian_filter, gaussian_filter1d
+from scipy.ndimage import gaussian_filter
 
 # Suppress noisy warnings
 warnings.filterwarnings("ignore")
@@ -78,14 +76,14 @@ def analyze_image_quality(img, label="Image"):
 
         # Check if image is mostly one color
         if pct_white > 95:
-            print(f"  ⚠️  IMAGE IS >95% WHITE — text may be lost")
+            print("  ⚠️  IMAGE IS >95% WHITE — text may be lost")
         if pct_black > 95:
-            print(f"  ⚠️  IMAGE IS >95% BLACK — text may be lost")
+            print("  ⚠️  IMAGE IS >95% BLACK — text may be lost")
 
     # Histogram
     if arr.ndim == 2:
         hist, bins = np.histogram(arr.ravel(), bins=16, range=(0, 256))
-        print(f"\n  Histogram (16 bins):")
+        print("\n  Histogram (16 bins):")
         max_h = max(hist) if max(hist) > 0 else 1
         for i, (h, b) in enumerate(zip(hist, bins)):
             bar = "█" * int(h / max_h * 30)
@@ -105,7 +103,7 @@ def analyze_image_quality(img, label="Image"):
         issues.append("Image too small for reliable OCR")
 
     if issues:
-        print(f"\n  ⚠️  ISSUES DETECTED:")
+        print("\n  ⚠️  ISSUES DETECTED:")
         for issue in issues:
             print(f"    - {issue}")
 
@@ -126,7 +124,7 @@ def test_preprocessing_steps(original_img):
         return
 
     print(f"\n{'='*60}")
-    print(f"  PREPROCESSING STEP ISOLATION")
+    print("  PREPROCESSING STEP ISOLATION")
     print(f"{'='*60}")
 
     steps = [
@@ -169,7 +167,7 @@ def test_preprocessing_steps(original_img):
             if raw:
                 print(f"    Preview: {repr(raw[:80])}")
             else:
-                print(f"    Preview: (empty)")
+                print("    Preview: (empty)")
 
         except Exception as e:
             print(f"\n  {name}")
@@ -178,7 +176,7 @@ def test_preprocessing_steps(original_img):
 
     # Summary
     print(f"\n  {'─'*56}")
-    print(f"  SUMMARY — ranked by chars extracted:")
+    print("  SUMMARY — ranked by chars extracted:")
     ranked = sorted(results, key=lambda r: r['length'], reverse=True)
     for r in ranked:
         marker = " ◀ BEST" if r == ranked[0] and r['length'] > 0 else ""
@@ -331,7 +329,7 @@ def test_tesseract_configs(img, label="preprocessed"):
 
     if not any(r[2] > 0 for r in results):
         print(f"\n  ⚠️  ALL CONFIGS RETURNED EMPTY for {label}")
-        print(f"      The image preprocessing has destroyed text readability.")
+        print("      The image preprocessing has destroyed text readability.")
     else:
         best = max(results, key=lambda r: r[2])
         print(f"\n  Best config: PSM={best[0]} OEM={best[1]} → {best[2]} chars")
@@ -351,7 +349,7 @@ def test_pdf_vs_preprocessed(pdf_path, page_num):
         return
 
     print(f"\n{'='*60}")
-    print(f"  PDF vs PREPROCESSED COMPARISON")
+    print("  PDF vs PREPROCESSED COMPARISON")
     print(f"  PDF: {os.path.basename(pdf_path)}  Page: {page_num}")
     print(f"{'='*60}")
 
@@ -393,7 +391,7 @@ def test_pdf_vs_preprocessed(pdf_path, page_num):
 def check_tesseract_env():
     """Check Tesseract installation and available languages."""
     print(f"\n{'='*60}")
-    print(f"  TESSERACT ENVIRONMENT")
+    print("  TESSERACT ENVIRONMENT")
     print(f"{'='*60}")
 
     try:
@@ -402,21 +400,21 @@ def check_tesseract_env():
         print(f"  Version:  {version}")
     except Exception as e:
         print(f"  ⚠️  Tesseract not found: {e}")
-        print(f"      Install: brew install tesseract  (macOS)")
+        print("      Install: brew install tesseract  (macOS)")
         return
 
     try:
         langs = pytesseract.get_languages()
         print(f"  Languages: {langs}")
         if 'eng' not in langs:
-            print(f"  ⚠️  English language data not installed!")
+            print("  ⚠️  English language data not installed!")
     except Exception as e:
         print(f"  ⚠️  Could not get languages: {e}")
 
     try:
         cmd = pytesseract.tesseract_cmd
         print(f"  Binary:    {cmd}")
-    except:
+    except Exception:
         pass
 
 
@@ -427,7 +425,7 @@ def check_tesseract_env():
 def print_diagnosis(step_results):
     """Print a human-readable diagnosis based on test results."""
     print(f"\n{'='*60}")
-    print(f"  DIAGNOSIS")
+    print("  DIAGNOSIS")
     print(f"{'='*60}")
 
     if not step_results:
@@ -444,47 +442,47 @@ def print_diagnosis(step_results):
     if original and original['length'] > 0:
         print(f"\n  ✓ Original image works ({original['length']} chars, conf={original['avg_conf']:.0f})")
     elif original:
-        print(f"\n  ✗ Even the original image fails — Tesseract installation issue?")
+        print("\n  ✗ Even the original image fails — Tesseract installation issue?")
 
     if gray_only and gray_only['length'] == 0:
-        print(f"  ✗ Grayscale conversion ALONE breaks OCR (0 chars)")
-        print(f"    → Tesseract cannot read the grayscale version of this image")
+        print("  ✗ Grayscale conversion ALONE breaks OCR (0 chars)")
+        print("    → Tesseract cannot read the grayscale version of this image")
         if gray_auto and gray_auto['length'] > 0:
             print(f"    → But adding autocontrast fixes it ({gray_auto['length']} chars)")
         elif gray_auto and gray_auto['length'] == 0:
-            print(f"    → Autocontrast also fails — Otsu thresholding makes it worse")
+            print("    → Autocontrast also fails — Otsu thresholding makes it worse")
 
     if otsu_only and otsu_only['length'] == 0:
-        print(f"  ✗ Otsu binarization (without local mean) also DESTROYS OCR")
-        print(f"    → The threshold chosen by Otsu is wrong for this image content")
+        print("  ✗ Otsu binarization (without local mean) also DESTROYS OCR")
+        print("    → The threshold chosen by Otsu is wrong for this image content")
 
     if full and full['length'] == 0:
-        print(f"  ✗ Full preprocessing pipeline DESTROYS OCR (0 chars)")
+        print("  ✗ Full preprocessing pipeline DESTROYS OCR (0 chars)")
         if gray_only and gray_only['length'] == 0:
-            print(f"    → Root cause: grayscale conversion (step 1) already kills OCR")
-            print(f"    → The local-mean + Otsu (steps 4-5) can't recover from that")
+            print("    → Root cause: grayscale conversion (step 1) already kills OCR")
+            print("    → The local-mean + Otsu (steps 4-5) can't recover from that")
         else:
-            print(f"    → The local-mean subtraction + Otsu binarization is too aggressive.")
+            print("    → The local-mean subtraction + Otsu binarization is too aggressive.")
 
     if best['length'] > 0:
         print(f"\n  Best approach: {best['name']}")
         print(f"    → {best['length']} chars, {best['words']} words")
 
-    print(f"\n  RECOMMENDED FIXES:")
+    print("\n  RECOMMENDED FIXES:")
     if original and original['length'] > 0 and full and full['length'] == 0:
-        print(f"  1. SKIP PREPROCESSING — use the original RGB image directly")
+        print("  1. SKIP PREPROCESSING — use the original RGB image directly")
         print(f"     Original: {original['length']} chars @ conf={original['avg_conf']:.0f}")
-        print(f"     Pipeline: 0 chars")
-        print(f"  2. If preprocessing needed, use grayscale + simple threshold 128")
+        print("     Pipeline: 0 chars")
+        print("  2. If preprocessing needed, use grayscale + simple threshold 128")
         simple = next((r for r in step_results if "simple threshold" in r['name']), None)
         if simple:
             print(f"     Simple threshold: {simple['length']} chars @ conf={simple['avg_conf']:.0f}")
-        print(f"  3. Grayscale + autocontrast + median (no binarization) also works")
+        print("  3. Grayscale + autocontrast + median (no binarization) also works")
         median = next((r for r in step_results if "median" in r['name']), None)
         if median:
             print(f"     Median approach: {median['length']} chars @ conf={median['avg_conf']:.0f}")
-    print(f"  4. Try PSM 6 (single block) instead of default PSM 3")
-    print(f"  5. Increase PDF render zoom from 2x to 3x for higher resolution")
+    print("  4. Try PSM 6 (single block) instead of default PSM 3")
+    print("  5. Increase PDF render zoom from 2x to 3x for higher resolution")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -532,7 +530,7 @@ def find_pdf_for_page(page_num, preprocessed_path=None):
                         best_match = path
                     if diff < 0.01:
                         return path  # exact match
-            except:
+            except Exception:
                 continue
 
         if best_match:
@@ -549,7 +547,7 @@ def find_pdf_for_page(page_num, preprocessed_path=None):
             doc.close()
             if n_pages >= page_num:
                 return path
-        except:
+        except Exception:
             continue
     return None
 
@@ -573,14 +571,14 @@ def run_diagnostic(page=None, pdf_path=None):
                 try:
                     num = int(f.split("_")[1])
                     pages.append(num)
-                except:
+                except Exception:
                     pass
 
     for page_num in pages:
         preprocessed_path = os.path.join(DEBUG_DIR, f"page_{page_num}_preprocessed.png")
         if not os.path.exists(preprocessed_path):
             print(f"\n  ⚠️  File not found: {preprocessed_path}")
-            print(f"      Attempting to generate it from source PDF...")
+            print("      Attempting to generate it from source PDF...")
 
             # Find which PDF to use
             source_pdf = pdf_path
@@ -625,7 +623,7 @@ def run_diagnostic(page=None, pdf_path=None):
         img = Image.open(preprocessed_path)
 
         # 1. Quality analysis
-        issues = analyze_image_quality(img, f"page_{page_num}_preprocessed.png")
+        analyze_image_quality(img, f"page_{page_num}_preprocessed.png")
 
         # 2. Preprocessing step isolation
         # Need original image for comparison
@@ -663,14 +661,14 @@ def run_diagnostic(page=None, pdf_path=None):
             # 5. Diagnosis
             print_diagnosis(step_results)
         else:
-            print(f"\n  ⚠️  No original PDF found — testing preprocessed image only")
+            print("\n  ⚠️  No original PDF found — testing preprocessed image only")
             try:
                 import pytesseract
                 raw = pytesseract.image_to_string(img).strip()
                 print(f"  OCR result: {'EMPTY' if not raw else f'{len(raw)} chars'}")
                 if raw:
                     print(f"  Preview: {repr(raw[:200])}")
-            except:
+            except Exception:
                 pass
             test_tesseract_configs(img, f"preprocessed page {page_num}")
 

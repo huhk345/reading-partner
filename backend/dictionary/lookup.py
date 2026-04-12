@@ -1,9 +1,6 @@
 import requests
 import sqlite3
 import os
-import json
-import re
-from parser.llm_parser import call_openrouter
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '../data/ecdict.db')
 

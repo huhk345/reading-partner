@@ -19,13 +19,6 @@ import threading
 import hashlib
 from pydantic import BaseModel
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
 from database import SessionLocal, init_db, Book, Sentence, Word, Vocab, ActivityLog, get_db
 from parser.pdf_parser import parse_pdf
 from parser.epub_parser import parse_epub
@@ -35,6 +28,13 @@ from dictionary.lookup import lookup_word
 from dictionary.lemmatize import get_lemma
 from srs.sm2 import update_sm2
 from tts.generate import tts_engine, light_tts_engine
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="Reading Partner API")
 
@@ -125,10 +125,8 @@ def process_book_background(book_id: int):
         cover_image_bytes = None
         if filename_lower.endswith('.pdf'):
             full_text, sentences, pages_data, cover_image_bytes = parse_pdf(file_path)
-            book_type = "pdf"
         elif filename_lower.endswith('.epub'):
             full_text, sentences, pages_data, cover_image_bytes = parse_epub(file_path)
-            book_type = "epub"
         else:
             book.status = "failed"
             book.error_message = "Unsupported file type"
