@@ -7,7 +7,7 @@ import SpriteText from 'three-spritetext';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { api } from '../lib/api';
 import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy, Play, LayoutGrid, Orbit, X } from 'lucide-react';
-import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats, VocabGraphResponse, VocabGraphNode, VocabGraphLink, Book, Sentence } from '../types';
+import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats, VocabGraphResponse, VocabGraphNode, VocabGraphLink } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import Title from './Title';
 import WordMatchGame from './WordMatchGame';
@@ -18,6 +18,13 @@ const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), { ssr: false 
 // Cache cover textures across nodes/renders (client-only file)
 const bookCoverTextureCache = new Map<string, THREE.Texture>();
 const bookCoverTextureLoader = new THREE.TextureLoader();
+// Ensure images can be used as WebGL textures without tainting the canvas.
+// Requires the backend to return proper CORS headers for /uploads/*.
+try {
+  bookCoverTextureLoader.setCrossOrigin('anonymous');
+} catch {
+  // ignore if unsupported by the installed three.js version/types
+}
 // Render book covers in a separate layer so bloom doesn't affect them.
 const BOOK_COVER_LAYER = 2;
 
@@ -329,10 +336,12 @@ function VocabGraph3DView({
   height,
   fullscreen,
   wordMeaningByLabel,
+  wordAudioByLabel,
 }: {
   height?: number;
   fullscreen?: boolean;
   wordMeaningByLabel: Map<string, string>;
+  wordAudioByLabel: Map<string, { wordId?: number; audioUrl?: string }>;
 }) {
   const graphRef = useRef<any>(null);
   const starfieldRef = useRef<THREE.Points | null>(null);
@@ -347,20 +356,6 @@ function VocabGraph3DView({
   const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
   const [highlightLinks, setHighlightLinks] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-
-  const [bookDetail, setBookDetail] = useState<{
-    loading: boolean;
-    error: string | null;
-    book: Book | null;
-    bookId: number | null;
-  }>({ loading: false, error: null, book: null, bookId: null });
-
-  const parsePrefixedId = useCallback((id: string): { prefix: string; num: number } | null => {
-    // Expected: w_123, s_456, b_789
-    const m = /^([wsb])_(\d+)$/.exec(id);
-    if (!m) return null;
-    return { prefix: m[1], num: Number(m[2]) };
-  }, []);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, VocabGraphNode>();
@@ -730,42 +725,59 @@ function VocabGraph3DView({
     focusNode(node);
   }, [focusNode]);
 
-  // When a book node is selected, fetch its full sentence list.
-  useEffect(() => {
-    if (!selectedNode || selectedNode.type !== 'book') {
-      setBookDetail({ loading: false, error: null, book: null, bookId: null });
-      return;
-    }
-
-    const parsed = parsePrefixedId(selectedNode.id);
-    const bookId = parsed?.prefix === 'b' ? parsed.num : null;
-    if (!bookId) {
-      setBookDetail({ loading: false, error: 'Invalid book id', book: null, bookId: null });
-      return;
-    }
-
-    let cancelled = false;
-    setBookDetail(prev => ({ ...prev, loading: true, error: null, book: null, bookId }));
-
-    api.get<Book>(`/api/books/${bookId}`)
-      .then((resp) => {
-        if (cancelled) return;
-        setBookDetail({ loading: false, error: null, book: resp.data, bookId });
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setBookDetail({ loading: false, error: e?.message ?? 'Failed to load book', book: null, bookId });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedNode, parsePrefixedId]);
-
   const selectedWordMeaning = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'word') return null;
     return wordMeaningByLabel.get(selectedNode.label) ?? '';
   }, [selectedNode, wordMeaningByLabel]);
+
+  const fallbackSpeak = useCallback((text: string) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.85;
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const handlePlaySelected = useCallback(async () => {
+    if (!selectedNode) return;
+
+    // Words: use same behavior as Word Wall cards (word audio API / audio_url, else synthesis).
+    if (selectedNode.type === 'word') {
+      const audioInfo = wordAudioByLabel.get(selectedNode.label);
+      const wordId = audioInfo?.wordId;
+      const audioUrl = audioInfo?.audioUrl;
+
+      if (wordId) {
+        const audio = new Audio(`${api.defaults.baseURL}/api/audio/${wordId}`);
+        audio.play().catch(() => fallbackSpeak(selectedNode.label));
+        return;
+      }
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        audio.play().catch(() => fallbackSpeak(selectedNode.label));
+        return;
+      }
+      fallbackSpeak(selectedNode.label);
+      return;
+    }
+
+    // Sentences: use same behavior as Reader (TTS API /api/tts, else synthesis).
+    if (selectedNode.type === 'sentence') {
+      const text = selectedNode.label;
+      try {
+        const response = await api.post('/api/tts', null, { params: { text } });
+        const url = response.data?.audio_url;
+        if (url) {
+          const audio = new Audio(url);
+          audio.play().catch(() => fallbackSpeak(text));
+          return;
+        }
+      } catch (e) {
+        console.error('Error playing sentence TTS:', e);
+      }
+      fallbackSpeak(text);
+    }
+  }, [selectedNode, wordAudioByLabel, fallbackSpeak]);
 
   const selectedWordSentences = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'word') return [];
@@ -790,6 +802,34 @@ function VocabGraph3DView({
       if (n?.type === 'book') return n;
     }
     return null;
+  }, [selectedNode, neighborsById, nodeById]);
+
+  const selectedSentenceWords = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'sentence') return [];
+    const neigh = neighborsById.get(selectedNode.id);
+    if (!neigh) return [];
+    const out: VocabGraphNode[] = [];
+    for (const id of neigh) {
+      const n = nodeById.get(id);
+      if (n?.type === 'word') out.push(n);
+    }
+    // stable-ish ordering: by label
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  }, [selectedNode, neighborsById, nodeById]);
+
+  const selectedBookSentences = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'book') return [];
+    const neigh = neighborsById.get(selectedNode.id);
+    if (!neigh) return [];
+    const out: VocabGraphNode[] = [];
+    for (const id of neigh) {
+      const n = nodeById.get(id);
+      if (n?.type === 'sentence') out.push(n);
+    }
+    // stable-ish ordering: by label
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
   }, [selectedNode, neighborsById, nodeById]);
 
   if (loading) {
@@ -889,19 +929,38 @@ function VocabGraph3DView({
                       {neighborsById.get(selectedNode.id)?.size ?? 0} links
                     </div>
                   </div>
-                  <div className="mt-1 text-white font-extrabold text-lg leading-snug truncate">
+                  <div
+                    className={`mt-1 text-white font-extrabold leading-snug ${
+                      selectedNode.type === 'sentence'
+                        ? 'text-base whitespace-normal break-words'
+                        : 'text-lg truncate'
+                    }`}
+                  >
                     {selectedNode.label}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedNodeId(null)}
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Close details"
-                  title="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {(selectedNode.type === 'word' || selectedNode.type === 'sentence') && (
+                    <button
+                      type="button"
+                      onClick={handlePlaySelected}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      aria-label="Play"
+                      title="Play"
+                    >
+                      <Play className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNodeId(null)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Close details"
+                    title="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
@@ -950,11 +1009,31 @@ function VocabGraph3DView({
                 {selectedNode.type === 'sentence' && (
                   <>
                     <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
-                        Sentence
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">
+                          Words
+                        </div>
+                        <div className="text-[11px] font-semibold text-white/45">
+                          {selectedSentenceWords.length}
+                        </div>
                       </div>
-                      <div className="mt-1 text-white/90 leading-relaxed">
-                        “{selectedNode.label}”
+                      <div className="mt-2 space-y-2">
+                        {selectedSentenceWords.length === 0 ? (
+                          <div className="text-sm text-white/50">No connected words.</div>
+                        ) : (
+                          selectedSentenceWords.map((w) => (
+                            <button
+                              key={w.id}
+                              type="button"
+                              onClick={() => focusNode(w)}
+                              className="w-full text-left rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
+                            >
+                              <div className="text-white font-bold truncate">
+                                {w.label}
+                              </div>
+                            </button>
+                          ))
+                        )}
                       </div>
                     </div>
 
@@ -1011,30 +1090,27 @@ function VocabGraph3DView({
                           Sentences
                         </div>
                         <div className="text-[11px] font-semibold text-white/45">
-                          {bookDetail.book?.sentences?.length ?? 0}
+                          {selectedBookSentences.length}
                         </div>
                       </div>
 
                       <div className="mt-2 space-y-2">
-                        {bookDetail.loading && (
-                          <div className="text-sm text-white/60">Loading…</div>
+                        {selectedBookSentences.length === 0 ? (
+                          <div className="text-sm text-white/50">No connected sentences.</div>
+                        ) : (
+                          selectedBookSentences.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => focusNode(s)}
+                              className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
+                            >
+                              <div className="text-sm text-white/80 leading-relaxed">
+                                “{s.label}”
+                              </div>
+                            </button>
+                          ))
                         )}
-                        {!bookDetail.loading && bookDetail.error && (
-                          <div className="text-sm text-red-200/80">{bookDetail.error}</div>
-                        )}
-                        {!bookDetail.loading && !bookDetail.error && (bookDetail.book?.sentences?.length ?? 0) === 0 && (
-                          <div className="text-sm text-white/50">No sentences found.</div>
-                        )}
-                        {(bookDetail.book?.sentences ?? []).map((s: Sentence) => (
-                          <div
-                            key={s.id}
-                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                          >
-                            <div className="text-sm text-white/80 leading-relaxed">
-                              “{s.text}”
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </>
@@ -1061,11 +1137,21 @@ export default function Review({ onBack }: ReviewProps) {
   const [mounted, setMounted] = useState(false);
   const fetchedRef = useRef(false);
   const [appHeaderBottom, setAppHeaderBottom] = useState<number>(0);
+  const [viewportHeight, setViewportHeight] = useState<number>(0);
 
   const wordMeaningByLabel = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of reviews) {
       if (r.word) m.set(r.word, r.meaning ?? '');
+    }
+    return m;
+  }, [reviews]);
+
+  const wordAudioByLabel = useMemo(() => {
+    const m = new Map<string, { wordId?: number; audioUrl?: string }>();
+    for (const r of reviews) {
+      if (!r.word) continue;
+      m.set(r.word, { wordId: r.word_id, audioUrl: r.audio_url ?? undefined });
     }
     return m;
   }, [reviews]);
@@ -1112,6 +1198,7 @@ export default function Review({ onBack }: ReviewProps) {
   useEffect(() => {
     const compute = () => {
       const header = document.querySelector('header');
+      setViewportHeight(window.innerHeight);
       if (!header) {
         setAppHeaderBottom(0);
         return;
@@ -1480,7 +1567,9 @@ export default function Review({ onBack }: ReviewProps) {
 
   // Full-bleed 3D view: fill width of page, height = 100vh - header
   if (mode === 'graph') {
-    const graphHeight = Math.max(320, window.innerHeight);
+    const headerOffset = appHeaderBottom;
+    const vh = viewportHeight || window.innerHeight;
+    const graphHeight = Math.max(320, vh - headerOffset);
 
     return (
       <>
@@ -1488,11 +1577,16 @@ export default function Review({ onBack }: ReviewProps) {
         <div
           className="fixed left-0 right-0 z-20"
           style={{
-            top: 0,
+            top: headerOffset,
             height: graphHeight,
           }}
         >
-          <VocabGraph3DView height={graphHeight} fullscreen wordMeaningByLabel={wordMeaningByLabel} />
+          <VocabGraph3DView
+            height={graphHeight}
+            fullscreen
+            wordMeaningByLabel={wordMeaningByLabel}
+            wordAudioByLabel={wordAudioByLabel}
+          />
         </div>
 
         {/* Top-right mode toggle (icons) */}

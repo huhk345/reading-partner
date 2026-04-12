@@ -42,10 +42,32 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
+# CORS:
+# - Book cover images are used in WebGL/canvas (Three.js). For canvas to remain readable
+#   (e.g., toDataURL, postprocessing, texture sampling), the image responses must include
+#   explicit CORS headers.
+# - IMPORTANT: Browsers reject `Access-Control-Allow-Origin: *` when
+#   `Access-Control-Allow-Credentials: true` is present, even for image loads.
+#   We don't need credentials for this app, so keep allow_credentials=False.
+cors_allow_origins_env = os.getenv(
+    "CORS_ALLOW_ORIGINS",
+    ",".join(
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ]
+    ),
+)
+cors_allow_origins = [o.strip() for o in cors_allow_origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_allow_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

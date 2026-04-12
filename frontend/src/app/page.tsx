@@ -20,7 +20,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col bg-gradient-to-b from-green-50 to-blue-50">
+    <main className={`min-h-screen flex flex-col bg-gradient-to-b from-green-50 to-blue-50 ${view === 'reader' ? 'h-screen overflow-hidden' : ''}`}>
       {/* Decorative floating elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-20 left-10 w-20 h-20 bg-green-200 rounded-full opacity-30 animate-pulse"></div>
@@ -82,7 +82,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className={`flex-1 overflow-y-auto ${view === 'reader' ? '' : 'max-w-6xl mx-auto p-6 w-full'} relative z-10`}>
+      <div className={`flex-1 ${view === 'reader' ? 'overflow-hidden' : 'max-w-6xl mx-auto p-6 w-full'} relative z-10`}>
         {view === 'library' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Title 
