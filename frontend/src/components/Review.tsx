@@ -41,6 +41,8 @@ try {
 }
 // Render book covers in a separate layer so bloom doesn't affect them.
 const BOOK_COVER_LAYER = 2;
+// Render word labels in a separate overlay layer so bloom doesn't make them look "shiny".
+const WORD_LABEL_LAYER = 3;
 
 const MATCH_GAME_LEVELS: LevelConfig[] = [
   { level: 1, difficulty: 'Easy',        timeLimit: 100, matchTarget: 15, mode: 'text' },
@@ -493,11 +495,12 @@ function VocabGraph3DView({
       }
     }
 
-    // Hook a render overlay step so book covers are drawn AFTER bloom and therefore never bloom.
+    // Hook a render overlay step so certain elements are drawn AFTER bloom and therefore never bloom.
     // Implementation approach:
     // - Put cover sprites on BOOK_COVER_LAYER
-    // - During composer render: camera renders default layer(s) only (covers excluded)
-    // - After composer render: render BOOK_COVER_LAYER directly to screen
+    // - Put word labels on WORD_LABEL_LAYER
+    // - During composer render: camera renders default layer(s) only (covers/labels excluded)
+    // - After composer render: render the overlay layers directly to screen
     if (!coverOverlayHookedRef.current && fg.postProcessingComposer && fg.renderer && fg.scene && fg.camera) {
       const composer = fg.postProcessingComposer();
       const renderer: THREE.WebGLRenderer | undefined = fg.renderer?.();
@@ -514,12 +517,14 @@ function VocabGraph3DView({
           camera.layers.set(0);
           originalRender(delta);
 
-          // Draw book covers on top with no postprocessing.
+          // Draw overlays on top with no postprocessing.
           renderer.autoClear = false;
           // Ensure the fullscreen postprocess quad doesn't block the overlay draw.
           renderer.clearDepth();
-          camera.layers.set(BOOK_COVER_LAYER);
-          renderer.render(scene, camera);
+          for (const layer of [BOOK_COVER_LAYER, WORD_LABEL_LAYER]) {
+            camera.layers.set(layer);
+            renderer.render(scene, camera);
+          }
 
           // Restore renderer/camera state.
           renderer.autoClear = prevAutoClear;
@@ -530,9 +535,26 @@ function VocabGraph3DView({
       }
     }
 
-    // Add lightweight starfield background once
+    // Add lightweight starfield and cube nebula background once
     if (!starfieldRef.current && fg.scene) {
       const scene: THREE.Scene = fg.scene();
+      const bgGroup = new THREE.Group();
+      
+      // Load cube nebula texture for high-fps background as a skybox
+      // Using a mesh avoids scene.background conflicts with ForceGraph3D and post-processing depth
+      const skyboxLoader = new THREE.TextureLoader();
+      const skyboxMaterials = [
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/px.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/nx.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/py.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/ny.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/pz.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/nz.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
+      ];
+      const skybox = new THREE.Mesh(new THREE.BoxGeometry(4000, 4000, 4000), skyboxMaterials);
+      skybox.renderOrder = -2;
+      bgGroup.add(skybox);
+
       const starsCount = 1200;
       const positions = new Float32Array(starsCount * 3);
       const radius = 1200;
@@ -554,14 +576,18 @@ function VocabGraph3DView({
       });
       const points = new THREE.Points(geometry, material);
       points.renderOrder = -1;
-      scene.add(points);
-      starfieldRef.current = points;
+      bgGroup.add(points);
+      
+      scene.add(bgGroup);
+      starfieldRef.current = bgGroup as any;
     }
 
     return () => {
       try {
         if (starfieldRef.current && fg.scene) {
-          fg.scene().remove(starfieldRef.current);
+          const scene: THREE.Scene = fg.scene();
+          scene.remove(starfieldRef.current);
+          // no need to reset scene.background anymore
         }
       } catch {
         // ignore cleanup errors during fast refresh
@@ -770,16 +796,23 @@ function VocabGraph3DView({
     // Keep always-on labels for word nodes only.
     if (type === 'word') {
       const sprite = new SpriteText(node.label);
-      sprite.color = type === 'word' ? '#FFE8A3' : '#9FFBFF';
+      // Clearer label color (requested): use white for word labels.
+      sprite.color = '#FFFFFF';
       sprite.textHeight = type === 'word' ? 7 : 5.5;
       sprite.padding = 4;
-      sprite.backgroundColor = 'rgba(0,0,0,0.35)';
+      // Transparent label background (requested)
+      sprite.backgroundColor = 'rgba(0,0,0,0)';
       // Remove label border (requested).
       sprite.borderColor = 'rgba(0,0,0,0)';
       sprite.borderWidth = 0;
       sprite.position.set(0, radius + 6, 0);
       sprite.material.transparent = true;
       sprite.material.opacity = isHighlighted ? 1 : 0.25;
+      // Improve readability: ensure the text isn't occluded by the node sphere.
+      sprite.material.depthTest = false;
+      sprite.renderOrder = 999;
+      // Keep labels crisp (no bloom "shine") by drawing them in an overlay layer.
+      sprite.layers.set(WORD_LABEL_LAYER);
       group.add(sprite);
     }
 
