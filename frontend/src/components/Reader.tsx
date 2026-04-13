@@ -858,10 +858,12 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelReadPageRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const currentPlaybackResolveRef = useRef<(() => void) | null>(null);
+  const currentPageRef = useRef<number>(1);
 
   const lastFetchedBookId = useRef<number | null>(null);
 
@@ -932,39 +934,91 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     console.log("Document loaded with", numPages, "pages. pages_data length:", book?.pages_data?.length);
   };
 
-  // Update current page on scroll
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  const getVisiblePdfPageNumber = useCallback((): number => {
+    const container = scrollContainerRef.current;
+    if (!container) return currentPageRef.current;
+
+    const pageElements = Array.from(
+      container.querySelectorAll<HTMLElement>('.pdf-page-wrapper'),
+    );
+    if (pageElements.length === 0) return currentPageRef.current;
+
+    const containerRect = container.getBoundingClientRect();
+    let visibleTop = containerRect.top;
+    let visibleBottom = containerRect.bottom;
+
+    // If the bottom bar overlaps the scroll container (mobile/small height layouts),
+    // treat the area behind the bar as NOT visible.
+    const barRect = bottomBarRef.current?.getBoundingClientRect();
+    if (barRect) {
+      visibleBottom = Math.min(visibleBottom, barRect.top);
+    }
+
+    if (visibleBottom <= visibleTop) return currentPageRef.current;
+
+    let bestPage = currentPageRef.current;
+    let bestIntersection = -1;
+    let bestIdx = Infinity;
+
+    for (let idx = 0; idx < pageElements.length; idx++) {
+      const rect = pageElements[idx].getBoundingClientRect();
+      const intersection = Math.max(
+        0,
+        Math.min(rect.bottom, visibleBottom) - Math.max(rect.top, visibleTop),
+      );
+
+      // Prefer the page with the largest visible area. If tied, prefer the earlier page.
+      if (
+        intersection > bestIntersection + 0.5 ||
+        (Math.abs(intersection - bestIntersection) <= 0.5 && idx < bestIdx)
+      ) {
+        bestIntersection = intersection;
+        bestIdx = idx;
+        bestPage = idx + 1;
+      }
+    }
+
+    // If no page is visibly intersecting (rare, but can happen during fast rerenders),
+    // keep the current page number stable rather than jumping.
+    if (bestIntersection <= 0) return currentPageRef.current;
+
+    return bestPage;
+  }, []);
+
+  // Update current page on scroll (PDF only)
   useEffect(() => {
     if (book?.type !== 'pdf' || !scrollContainerRef.current) return;
 
+    const container = scrollContainerRef.current;
+    let rafId: number | null = null;
+
     const handleScroll = () => {
-        if (!scrollContainerRef.current) return;
-        
-        const container = scrollContainerRef.current;
-        const pageElements = container.querySelectorAll('.pdf-page-wrapper');
-        
-        let currentIdx = 1;
-        let minDiff = Infinity;
-        
-        pageElements.forEach((el, idx) => {
-            const rect = el.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-            const diff = Math.abs(rect.top - containerRect.top);
-            
-            if (diff < minDiff) {
-                minDiff = diff;
-                currentIdx = idx + 1;
-            }
-        });
-        
-        if (currentIdx !== currentPage) {
-            setCurrentPage(currentIdx);
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        const nextPage = getVisiblePdfPageNumber();
+        if (nextPage !== currentPageRef.current) {
+          currentPageRef.current = nextPage;
+          setCurrentPage(nextPage);
         }
+      });
     };
 
-    const container = scrollContainerRef.current;
     container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [book, currentPage]);
+    // Initialize once the pages are rendered.
+    handleScroll();
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [book?.type, getVisiblePdfPageNumber]);
 
   const scrollToPage = (pageNum: number) => {
     if (!scrollContainerRef.current) return;
@@ -1220,7 +1274,15 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     if (book?.type !== 'pdf') return;
     if (!isPageTtsReady) return;
 
-    const texts = pageSentences[currentPage] || [];
+    // Read the page that is actually visible (not just what state thinks),
+    // so the button never jumps ahead when the next page isn't on screen yet.
+    const visiblePage = getVisiblePdfPageNumber();
+    if (visiblePage !== currentPageRef.current) {
+      currentPageRef.current = visiblePage;
+      setCurrentPage(visiblePage);
+    }
+
+    const texts = pageSentences[visiblePage] || [];
     if (texts.length === 0) return;
 
     stopPlayback();
@@ -1242,10 +1304,10 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     }
   }, [
     book?.type,
-    currentPage,
     isPageTtsReady,
     pageSentences,
     pageSentenceAudioUrls,
+    getVisiblePdfPageNumber,
     playCachedSentenceAudio,
     stopPlayback,
   ]);
@@ -1322,7 +1384,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
         {book.type === 'pdf' ? (
           <div 
             ref={scrollContainerRef}
-            className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 flex flex-col items-center gap-8 py-8 px-4"
+            className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 flex flex-col items-center gap-8 py-8 pb-24 px-4"
           >
             <Document
                 file={book.pdf_url}
@@ -1490,7 +1552,10 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
       {/* Pagination & Zoom Controls (only for PDF) */}
       {book.type === 'pdf' && (
-        <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10 flex-shrink-0">
+        <div
+          ref={bottomBarRef}
+          className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 z-10 flex-shrink-0"
+        >
           <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
             <button 
               onClick={() => setScale(prev => Math.max(prev - 0.1, 0.5))}
