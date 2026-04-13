@@ -29,6 +29,14 @@ from dictionary.lemmatize import get_lemma
 from srs.sm2 import update_sm2
 from tts.generate import tts_engine, light_tts_engine
 
+# Whole-token matching helpers (used for Word Wall graph word->sentence linking)
+try:
+    # When running with `uvicorn main:app` inside the backend folder.
+    from matching import compile_whole_token_pattern
+except ImportError:  # pragma: no cover
+    # When running as a package (e.g., `python -m backend.main`).
+    from .matching import compile_whole_token_pattern
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,21 +57,9 @@ if not os.path.exists(UPLOAD_DIR):
 # - IMPORTANT: Browsers reject `Access-Control-Allow-Origin: *` when
 #   `Access-Control-Allow-Credentials: true` is present, even for image loads.
 #   We don't need credentials for this app, so keep allow_credentials=False.
-cors_allow_origins_env = os.getenv(
-    "CORS_ALLOW_ORIGINS",
-    ",".join(
-        [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-        ]
-    ),
-)
-cors_allow_origins = [o.strip() for o in cors_allow_origins_env.split(",") if o.strip()]
+cors_allow_origins = ["*"]
 
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins,
@@ -553,17 +549,14 @@ def get_vocab_graph(db: Session = Depends(get_db)):
         # Python whole-token check:
         # - Must NOT have a `\w` character immediately before or after the match.
         # - This prevents substring matches like: "age" matching inside "image".
-        try:
-            pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
-        except re.error:
-            pattern = None
+        pattern = compile_whole_token_pattern(word)
 
         # If strict "whole-token" matching yields no links for a vocab word, fall back to a
         # simpler substring/`includes` strategy so the word doesn't become an isolated node.
         # This intentionally ignores the stricter word-boundary logic in the fallback case.
         strict_matches = [
             s for s in candidates
-            if (not pattern) or pattern.search(s.text or "")
+            if pattern and pattern.search(s.text or "")
         ]
         matches = strict_matches if strict_matches else candidates
 

@@ -948,7 +948,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     if (pageElements.length === 0) return currentPageRef.current;
 
     const containerRect = container.getBoundingClientRect();
-    let visibleTop = containerRect.top;
+    const visibleTop = containerRect.top;
     let visibleBottom = containerRect.bottom;
 
     // If the bottom bar overlaps the scroll container (mobile/small height layouts),

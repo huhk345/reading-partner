@@ -482,10 +482,12 @@ function VocabGraph3DView({
       const composer = fg.postProcessingComposer();
       if (composer) {
         const size = new THREE.Vector2(window.innerWidth, window.innerHeight);
-        const bloomPass = new UnrealBloomPass(size, 1.2, 0.6, 0.0);
-        bloomPass.threshold = 0.0;
-        bloomPass.strength = 1.3;
-        bloomPass.radius = 0.85;
+        // Bloom tuning: keep a "glow" vibe but avoid overly glossy/washed-out nodes.
+        // (Lower strength, non-zero threshold so only the brightest parts bloom.)
+        const bloomPass = new UnrealBloomPass(size, 0.8, 0.5, 0.15);
+        bloomPass.threshold = 0.15;
+        bloomPass.strength = 0.75;
+        bloomPass.radius = 0.35;
         composer.addPass(bloomPass);
         bloomAddedRef.current = true;
       }
@@ -753,9 +755,11 @@ function VocabGraph3DView({
     const material = new THREE.MeshStandardMaterial({
       color: baseColor,
       emissive: baseColor,
-      emissiveIntensity: isHighlighted ? 1.0 : 0.2,
-      roughness: 0.4,
-      metalness: 0.1,
+      // Reduce perceived shininess by increasing roughness and removing metallic specular.
+      // We keep emissive for the star-map glow (bloom handles the "halo").
+      emissiveIntensity: isHighlighted ? 0.75 : 0.12,
+      roughness: 0.92,
+      metalness: 0.0,
       transparent: true,
       opacity: isHighlighted ? 0.95 : 0.25,
     });
