@@ -43,6 +43,14 @@ try {
 const BOOK_COVER_LAYER = 2;
 // Render word labels in a separate overlay layer so bloom doesn't make them look "shiny".
 const WORD_LABEL_LAYER = 3;
+const NEBULA_CUBE_FACES = [
+  '/textures/px.jpg',
+  '/textures/nx.jpg',
+  '/textures/py.jpg',
+  '/textures/ny.jpg',
+  '/textures/pz.jpg',
+  '/textures/nz.jpg',
+] as const;
 
 const MATCH_GAME_LEVELS: LevelConfig[] = [
   { level: 1, difficulty: 'Easy',        timeLimit: 100, matchTarget: 15, mode: 'text' },
@@ -366,6 +374,8 @@ function VocabGraph3DView({
 }) {
   const graphRef = useRef<ForceGraphMethods<VocabGraphNode, VocabGraphLink> | null>(null);
   const starfieldRef = useRef<THREE.Points | null>(null);
+  const nebulaBackgroundRef = useRef<THREE.CubeTexture | null>(null);
+  const nebulaBackgroundLoadingRef = useRef(false);
   const bloomAddedRef = useRef(false);
   const coverOverlayHookedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -512,10 +522,18 @@ function VocabGraph3DView({
         composer.render = (delta?: number) => {
           const prevMask = camera.layers.mask;
           const prevAutoClear = renderer.autoClear;
+          const prevBackground = scene.background;
+
+          // Inject the nebula cube map during the main render only, so the existing
+          // node rendering path stays unchanged and overlay layers still draw cleanly.
+          if (nebulaBackgroundRef.current) {
+            scene.background = nebulaBackgroundRef.current;
+          }
 
           // Render the main scene (everything except book covers) with bloom.
           camera.layers.set(0);
           originalRender(delta);
+          scene.background = prevBackground;
 
           // Draw overlays on top with no postprocessing.
           renderer.autoClear = false;
@@ -535,26 +553,31 @@ function VocabGraph3DView({
       }
     }
 
-    // Add lightweight starfield and cube nebula background once
+    // Load the cube-texture nebula once. This is GPU-native and cheaper than adding
+    // another large scene mesh, which helps keep graph FPS stable.
+    if (!nebulaBackgroundRef.current && !nebulaBackgroundLoadingRef.current) {
+      nebulaBackgroundLoadingRef.current = true;
+      new THREE.CubeTextureLoader().load(
+        [...NEBULA_CUBE_FACES],
+        (texture) => {
+          try {
+            texture.colorSpace = THREE.SRGBColorSpace;
+          } catch {
+            // ignore if not supported by the installed three.js version/types
+          }
+          nebulaBackgroundRef.current = texture;
+          nebulaBackgroundLoadingRef.current = false;
+        },
+        undefined,
+        () => {
+          nebulaBackgroundLoadingRef.current = false;
+        }
+      );
+    }
+
+    // Add lightweight starfield background once
     if (!starfieldRef.current && fg.scene) {
       const scene: THREE.Scene = fg.scene();
-      const bgGroup = new THREE.Group();
-      
-      // Load cube nebula texture for high-fps background as a skybox
-      // Using a mesh avoids scene.background conflicts with ForceGraph3D and post-processing depth
-      const skyboxLoader = new THREE.TextureLoader();
-      const skyboxMaterials = [
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/px.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/nx.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/py.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/ny.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/pz.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-        new THREE.MeshBasicMaterial({ map: skyboxLoader.load('/textures/nz.jpg'), side: THREE.BackSide, depthWrite: false, fog: false }),
-      ];
-      const skybox = new THREE.Mesh(new THREE.BoxGeometry(4000, 4000, 4000), skyboxMaterials);
-      skybox.renderOrder = -2;
-      bgGroup.add(skybox);
-
       const starsCount = 1200;
       const positions = new Float32Array(starsCount * 3);
       const radius = 1200;
@@ -576,18 +599,14 @@ function VocabGraph3DView({
       });
       const points = new THREE.Points(geometry, material);
       points.renderOrder = -1;
-      bgGroup.add(points);
-      
-      scene.add(bgGroup);
-      starfieldRef.current = bgGroup as any;
+      scene.add(points);
+      starfieldRef.current = points;
     }
 
     return () => {
       try {
         if (starfieldRef.current && fg.scene) {
-          const scene: THREE.Scene = fg.scene();
-          scene.remove(starfieldRef.current);
-          // no need to reset scene.background anymore
+          fg.scene().remove(starfieldRef.current);
         }
       } catch {
         // ignore cleanup errors during fast refresh
@@ -595,6 +614,14 @@ function VocabGraph3DView({
       starfieldRef.current = null;
     };
   }, [graphData, loading]);
+
+  useEffect(() => {
+    return () => {
+      nebulaBackgroundRef.current?.dispose();
+      nebulaBackgroundRef.current = null;
+      nebulaBackgroundLoadingRef.current = false;
+    };
+  }, []);
 
   const getLinkKey = (l: LinkObject<VocabGraphNode, VocabGraphLink>) => {
     const getEndId = (end: unknown) => {
@@ -706,7 +733,7 @@ function VocabGraph3DView({
 
     const baseRadius =
       type === 'word' ? 7.5 :
-      type === 'book' ? 6 :
+      type === 'book' ? 9 :
       3.5;
 
     // Scale only word + sentence nodes by degree; keep book size stable.
@@ -733,12 +760,12 @@ function VocabGraph3DView({
       coverSprite.layers.set(BOOK_COVER_LAYER);
       // Bigger cover for easier clicking/tapping
       // (Sprite size also affects raycast hit area in react-force-graph-3d)
-      coverSprite.scale.set(36, 48, 1);
+      coverSprite.scale.set(54, 72, 1);
       group.add(coverSprite);
 
       // Extra invisible hit area to make the book easier to click on,
       // without changing visuals or affecting bloom.
-      const hitGeometry = new THREE.PlaneGeometry(44, 58);
+      const hitGeometry = new THREE.PlaneGeometry(66, 87);
       const hitMaterial = new THREE.MeshBasicMaterial({
         transparent: true,
         opacity: 0,
@@ -1165,7 +1192,7 @@ function VocabGraph3DView({
                           <img
                             src={selectedNode.image}
                             alt={selectedNode.label}
-                            className="w-16 h-20 rounded-xl object-cover border border-white/10"
+                            className="w-24 h-30 rounded-xl object-cover border border-white/10"
                           />
                           <div className="min-w-0">
                             <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">

@@ -587,7 +587,7 @@ def get_vocab_graph(db: Session = Depends(get_db)):
                 node_id=b_node_id,
                 node_type="book",
                 label=book.title or f"Book {book.id}",
-                val=15,
+                val=23,
                 color="#00FFFF",  # cyan
             )
             # Add cover image URL if available (frontend uses it for book nodes)
