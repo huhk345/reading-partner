@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import logging
 import threading
 import hashlib
+import uuid
 from pydantic import BaseModel
 
 from database import SessionLocal, init_db, Book, Sentence, Word, Vocab, ActivityLog, get_db
@@ -196,22 +197,31 @@ def process_book_background(book_id: int):
 
 @app.post("/api/upload")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    original_filename = file.filename
+    filename_lower = original_filename.lower()
+    if filename_lower.endswith('.pdf'):
+        book_type = "pdf"
+        ext = ".pdf"
+    elif filename_lower.endswith('.epub'):
+        book_type = "epub"
+        ext = ".epub"
+    else:
+        raise HTTPException(status_code=400, detail="Only PDF and EPUB files are supported")
+
+    # Use a UUID-based filename to avoid collisions when users upload files with the same name.
+    # Keep the original name in `title` for display.
+    saved_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, saved_filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    filename_lower = file.filename.lower()
-    if filename_lower.endswith('.pdf'):
-        book_type = "pdf"
-    elif filename_lower.endswith('.epub'):
-        book_type = "epub"
-    else:
-        raise HTTPException(status_code=400, detail="Only PDF and EPUB files are supported")
-    
     # Save book initially with pending status
     db_book = Book(
-        title=file.filename, 
-        filename=file.filename,
+        title=original_filename,
+        filename=saved_filename,
         type=book_type,
         status="pending",
         progress=0.0
