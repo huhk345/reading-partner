@@ -84,7 +84,7 @@ def get_book_info_and_clean_text(text_sample):
     Response format: {{"title": "...", "cleaned_sample": "..."}}
     Return ONLY the JSON.
     """
-    
+    print("Calling OpenRouter to extract book info and clean text...")
     response = call_openrouter([{"role": "user", "content": prompt}], temperature=0.1)
     if response:
         # Extract JSON from response

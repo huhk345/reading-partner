@@ -77,75 +77,229 @@ def preprocess_for_ocr(pil_image):
 
 def reorder_and_build_text(page_words, width):
     """
-    Reorder words based on column projection profile and reconstruct text.
-    Handles both 1-column and 2-column layouts robustly.
+    Reorder words into correct reading order and reconstruct text.
+
+    Key goals:
+    - Robust against bad `block` / `line` numbering order (common in PDF extraction / OCR).
+    - Order should be applied *within a column* (avoid interleaving multi-column layouts).
+    - Within a line: order left-to-right (x).
+    - Between lines: order top-to-bottom (y).
     """
     if not page_words:
         return [], ""
-    
+
+    def _median(values, default=0.0):
+        if not values:
+            return default
+        s = sorted(values)
+        return float(s[len(s) // 2])
+
+    def _build_segments(words_in_column, median_h):
+        """
+        Build 'segments' from (block,line) groups, and split within a group
+        if it accidentally contains multiple far-apart lines.
+        """
+        groups = {}
+        for w in words_in_column:
+            groups.setdefault((w.get("block"), w.get("line")), []).append(w)
+
+        # Split within a (block,line) group by y-gaps, but only for *big* gaps.
+        # This preserves slanted lines (small gradual y drift) while separating
+        # genuinely different lines that got the same `line` id.
+        y_split = max(5.0, median_h * 1.3)
+        segments = []
+        for (b, l), ws in groups.items():
+            ws_sorted = sorted(ws, key=lambda ww: (ww["bbox"][1], ww["bbox"][0]))
+            if not ws_sorted:
+                continue
+            cluster = [ws_sorted[0]]
+            for ww in ws_sorted[1:]:
+                if (ww["bbox"][1] - cluster[-1]["bbox"][1]) > y_split:
+                    segments.append((b, l, cluster))
+                    cluster = [ww]
+                else:
+                    cluster.append(ww)
+            segments.append((b, l, cluster))
+
+        def _seg_box(seg_words):
+            x0 = min(w["bbox"][0] for w in seg_words)
+            y0 = min(w["bbox"][1] for w in seg_words)
+            x1 = max(w["bbox"][2] for w in seg_words)
+            y1 = max(w["bbox"][3] for w in seg_words)
+            return x0, y0, x1, y1
+
+        seg_objs = []
+        for b, l, seg_words in segments:
+            x0, y0, x1, y1 = _seg_box(seg_words)
+            seg_objs.append(
+                {
+                    "words": seg_words,
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x1,
+                    "y1": y1,
+                    "yc": (y0 + y1) / 2.0,
+                    "block": b,
+                    "line": l,
+                }
+            )
+        return seg_objs
+
+    class _DSU:
+        def __init__(self, n):
+            self.p = list(range(n))
+
+        def find(self, a):
+            while self.p[a] != a:
+                self.p[a] = self.p[self.p[a]]
+                a = self.p[a]
+            return a
+
+        def union(self, a, b):
+            ra, rb = self.find(a), self.find(b)
+            if ra != rb:
+                self.p[rb] = ra
+
+    def _reorder_single_column(words_in_column):
+        if not words_in_column:
+            return [], ""
+
+        heights = [(w["bbox"][3] - w["bbox"][1]) for w in words_in_column]
+        median_h = _median(heights, default=10.0)
+
+        segs = _build_segments(words_in_column, median_h)
+        if not segs:
+            return [], ""
+
+        # Cluster segments into physical text lines.
+        #
+        # Important: only merge segments if their `line` id matches.
+        # This prevents accidental merges across different text lines that happen
+        # to be close (especially in complex layouts).
+        n = len(segs)
+        dsu = _DSU(n)
+        order = sorted(range(n), key=lambda i: segs[i]["yc"])
+
+        line_tol = median_h * 1.1
+        overlap_req = 0.1
+        x_gap_tol = median_h * 4.0
+        # When PDF extraction assigns different `line` ids to the *same* physical
+        # text line (common near wrapped lines / right-edge spillover), allow
+        # a stricter "left-to-right continuation" merge.
+        continuation_overlap_req = 0.45
+        continuation_x_gap_tol = median_h * 1.8
+
+        for pos, i in enumerate(order):
+            yi = segs[i]["yc"]
+            for j in order[pos + 1 :]:
+                if (segs[j]["yc"] - yi) > line_tol:
+                    break
+
+                a, b = segs[i], segs[j]
+                same_line_id = a.get("line") == b.get("line")
+
+                overlap = min(a["y1"], b["y1"]) - max(a["y0"], b["y0"])
+                min_h = min(a["y1"] - a["y0"], b["y1"] - b["y0"])
+                if min_h <= 0:
+                    continue
+                overlap_ratio = overlap / min_h
+                if overlap_ratio < overlap_req:
+                    continue
+
+                # Horizontal distance between the two segments (0 if overlapping).
+                is_continuation = False
+                if not same_line_id:
+                    # a -> b
+                    if a["x1"] <= (b["x0"] + 1.0):
+                        gap = b["x0"] - a["x1"]
+                        if gap <= continuation_x_gap_tol and overlap_ratio >= continuation_overlap_req:
+                            is_continuation = True
+                    # b -> a
+                    elif b["x1"] <= (a["x0"] + 1.0):
+                        gap = a["x0"] - b["x1"]
+                        if gap <= continuation_x_gap_tol and overlap_ratio >= continuation_overlap_req:
+                            is_continuation = True
+
+                # Primary path: same line id. Fallback: strict left-right continuation.
+                if same_line_id or is_continuation:
+                    # Additional guard: if they are too far apart vertically, don't merge.
+                    if overlap_ratio >= overlap_req:
+                        dsu.union(i, j)
+
+        # Build line clusters
+        clusters = {}
+        for i in range(n):
+            clusters.setdefault(dsu.find(i), []).append(segs[i])
+
+        lines = []
+        for seg_list in clusters.values():
+            x0 = min(s["x0"] for s in seg_list)
+            y0 = min(s["y0"] for s in seg_list)
+            x1 = max(s["x1"] for s in seg_list)
+            y1 = max(s["y1"] for s in seg_list)
+            lines.append({"segs": seg_list, "x0": x0, "y0": y0, "x1": x1, "y1": y1})
+
+        # Top-to-bottom; if tied, left-to-right
+        lines.sort(key=lambda l: (l["y0"], l["x0"]))
+
+        ordered_words = []
+        text_lines = []
+        for line in lines:
+            line["segs"].sort(key=lambda s: s["x0"])
+            line_words = []
+            for seg in line["segs"]:
+                seg["words"].sort(key=lambda w: w["bbox"][0])
+                line_words.extend(seg["words"])
+                ordered_words.extend(seg["words"])
+            text_lines.append(" ".join(w["text"] for w in line_words))
+
+        return ordered_words, "\n".join(text_lines)
+
+    # ---- Column detection (keep existing projection approach) ----
     data = []
-    for i, w in enumerate(page_words):
-        bbox = w['bbox']
-        data.append({
-            'index': i,
-            'left': bbox[0],
-            'top': bbox[1],
-            'right': bbox[2],
-            'bottom': bbox[3],
-            'width': bbox[2] - bbox[0],
-            'height': bbox[3] - bbox[1]
-        })
+    for w in page_words:
+        x0, y0, x1, y1 = w["bbox"]
+        data.append({"left": x0, "top": y0, "right": x1, "bottom": y1})
     df = pd.DataFrame(data)
 
-    # 1. Projection profile
-    w_int = int(width)
+    w_int = int(width) if width else 0
     if w_int <= 0:
-        w_int = 1000
-    projection = np.zeros(w_int)
+        w_int = int(max(df["right"].max(), 1000))
 
+    projection = np.zeros(w_int, dtype=np.float32)
     for _, r in df.iterrows():
         x1 = max(0, int(r.left))
         x2 = min(w_int, int(r.right))
         if x1 < x2:
             projection[x1:x2] += 1
-
     projection = gaussian_filter1d(projection, sigma=10)
 
-    # 2. Detect column separator
-    center_region = projection[w_int//3 : 2*w_int//3]
-    
+    center_region = projection[w_int // 3 : 2 * w_int // 3]
     if len(center_region) > 0:
-        gap_min = np.min(center_region)
-        gap_idx = np.argmin(center_region)
-        separator = gap_idx + w_int//3
-
-        left_peak = np.max(projection[:separator]) if separator > 0 else 0
-        right_peak = np.max(projection[separator:]) if separator < w_int else 0
-
-        # Robustness: Check if it's actually 2 columns
-        # Gap should be significantly lower than the peaks
-        is_two_columns = (left_peak > 0 and right_peak > 0 and gap_min < 0.2 * min(left_peak, right_peak))
+        gap_min = float(np.min(center_region))
+        gap_idx = int(np.argmin(center_region))
+        separator = gap_idx + w_int // 3
+        left_peak = float(np.max(projection[:separator])) if separator > 0 else 0.0
+        right_peak = float(np.max(projection[separator:])) if separator < w_int else 0.0
+        is_two_columns = (
+            left_peak > 0
+            and right_peak > 0
+            and gap_min < 0.2 * min(left_peak, right_peak)
+        )
     else:
         is_two_columns = False
         separator = w_int // 2
 
     if is_two_columns:
-        # 3. Split columns
-        left_df = df[df.left < separator].copy()
-        right_df = df[df.left >= separator].copy()
-        
-        ordered_indices = left_df['index'].tolist() + right_df['index'].tolist()
-        
-        # Build text
-        page_text = " ".join(page_words[i]['text'] for i in left_df['index'])
-        page_text += "\n\n" # separate columns
-        page_text += " ".join(page_words[i]['text'] for i in right_df['index'])
-            
-    else:
-        ordered_indices = df['index'].tolist()
-        page_text = " ".join(page_words[i]['text'] for i in df['index'])
+        left_words = [w for w in page_words if w["bbox"][0] < separator]
+        right_words = [w for w in page_words if w["bbox"][0] >= separator]
 
-    ordered_words = [page_words[i] for i in ordered_indices]
+        left_ordered, left_text = _reorder_single_column(left_words)
+        right_ordered, right_text = _reorder_single_column(right_words)
+        page_text = (left_text + "\n\n" + right_text).strip()
+        return left_ordered + right_ordered, page_text
+
+    ordered_words, page_text = _reorder_single_column(page_words)
     return ordered_words, page_text
 
 def _ocr_extract(img, zoom, page_width, config='--psm 3'):
@@ -155,6 +309,8 @@ def _ocr_extract(img, zoom, page_width, config='--psm 3'):
     page_words = []
     for i in range(len(data['text'])):
         if data['text'][i].strip() and int(data['conf'][i]) >= 0:
+            if data['text'][i].strip() in ("|", "｜"):
+                data['text'][i] = "I"
             x = data['left'][i] / zoom
             y = data['top'][i] / zoom
             w = data['width'][i] / zoom
@@ -261,6 +417,9 @@ def parse_pdf(file_path, debug=False):
                 "block": w[5],
                 "line": w[6]
             })
+
+        # Fix word order for API consumers (pages_data.words).
+        page_words, _ = reorder_and_build_text(page_words, page.rect.width)
         
         page_text = page.get_text()
         full_text += page_text + "\n"
