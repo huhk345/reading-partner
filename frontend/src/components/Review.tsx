@@ -13,6 +13,7 @@ import type {
   NodeObject,
 } from 'react-force-graph-3d';
 import { api } from '../lib/api';
+import { getVocabGraph } from '../lib/vocabGraph';
 import { Check, Volume2, Sparkles, Target, History, RotateCw, BookOpen, Gamepad2, RefreshCw, Trophy, Play, LayoutGrid, Orbit } from 'lucide-react';
 import { VocabReview, LevelConfig, GameSession, calcSoundThreshold, LevelStats, VocabGraphResponse, VocabGraphNode, VocabGraphLink } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -435,11 +436,13 @@ function VocabGraph3DView({
     setContainerHeight(height);
   }, []);
 
+  const fetchedRef = useRef(false);
+
   const fetchGraph = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await api.get<VocabGraphResponse>('/api/vocab/graph');
-      setGraphData(resp.data);
+      const data = await getVocabGraph();
+      setGraphData(data);
     } catch (e) {
       console.error('Error fetching vocab graph:', e);
       setGraphData({ nodes: [], links: [] });
@@ -449,6 +452,8 @@ function VocabGraph3DView({
   }, []);
 
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
     fetchGraph();
   }, [fetchGraph]);
 
@@ -1878,7 +1883,7 @@ export default function Review({ onBack }: ReviewProps) {
               </div>
             )}
             
-            <div className="space-y-8 py-8">
+            <div className="space-y-8">
               <div className="relative">
                 <Title 
                   title="Word Wall" 
