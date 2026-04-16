@@ -276,9 +276,9 @@ function WordOverlay({ pageData, pageNumber, renderedWidth, renderedHeight, onWo
                   const endIdx: number = expectedSentenceIdx !== null ? expectedSentenceIdx + 1 : normalizedSentences.length;
                   for (let sIdx: number = startIdx; sIdx < endIdx; sIdx++) {
                       const s = normalizedSentences[sIdx];
-                      if (Math.abs(s.normalized.length - normalizedText.length) > 2) continue;
+                      if (Math.abs(s.normalized.length - normalizedText.length) > 3) continue;
                       const dist = levenshteinDistance(s.normalized, normalizedText);
-                      const maxDist = normalizedText.length > 10 ? 2 : 1;
+                      const maxDist = normalizedText.length > 10 ? 3 : 1;
                       if (dist <= maxDist) {
                           if (dist < minDist) {
                               minDist = dist;
