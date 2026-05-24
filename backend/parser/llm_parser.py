@@ -100,19 +100,15 @@ def get_book_info_and_clean_text(text_sample):
 
 def split_sentences_regex(text):
     """
-    Splits text into sentences using a stateful approach that respects quotes.
-    - Does not split inside quotes (e.g., "Sentence 1. Sentence 2.")
-    - Splits at ." or ?" or !" (e.g., "Hello." said John.)
-    - Splits at . or ? or ! outside of quotes.
+    Splits text into sentences by sentence-ending punctuation (.!?…).
+    - Splits at . or ? or ! or … followed by whitespace, quotes, or end of string.
     - Handles common abbreviations to avoid false splits.
     """
     if not text:
         return []
 
-    # Pre-cleaning: replace multiple spaces and newlines
     text = re.sub(r'\s+', ' ', text).strip()
 
-    # Protect common abbreviations by replacing them temporarily
     abbreviations = [
         r'\bMrs\.', r'\bMr\.', r'\bMs\.', r'\bDr\.', r'\bProf\.', r'\bSr\.', r'\bJr\.',
         r'\bSt\.', r'\bAve\.', r'\bBlvd\.', r'\bRd\.',
@@ -124,34 +120,24 @@ def split_sentences_regex(text):
     abbreviation_pattern = '|'.join(abbreviations)
     protected = re.sub(f'({abbreviation_pattern})', lambda m: m.group().replace('.', '\x00'), text)
 
+    quote_chars = '"“”\''
     sentences = []
     current = []
-    in_quotes = False
-    quote_chars = '"“”'
-
     chars = list(protected)
     i = 0
     while i < len(chars):
         c = chars[i]
         current.append(c)
 
-        if c in quote_chars:
-            in_quotes = not in_quotes
-
         should_split = False
-
-        # Rule: if we encounter ."/?"/!" we should split there
-        if c in '.!?…' and i + 1 < len(chars) and chars[i+1] in quote_chars:
-            # If we are in_quotes, then this next quote is likely closing
-            if in_quotes:
+        if c in '.!?…':
+            if i + 1 == len(chars):
+                should_split = True
+            elif chars[i+1] in quote_chars:
                 current.append(chars[i+1])
                 i += 1
-                in_quotes = not in_quotes # toggle back
                 should_split = True
-
-        # Rule: split outside quotes
-        elif c in '.!?…' and not in_quotes:
-            if i + 1 == len(chars) or chars[i+1].isspace():
+            elif chars[i+1].isspace():
                 should_split = True
 
         if should_split:
@@ -159,7 +145,6 @@ def split_sentences_regex(text):
             if s:
                 sentences.append(s)
             current = []
-            # consume trailing space
             while i + 1 < len(chars) and chars[i+1].isspace():
                 i += 1
 
