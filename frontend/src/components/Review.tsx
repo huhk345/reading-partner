@@ -993,10 +993,24 @@ function VocabGraph3DView({
         <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-cyan-400/10 blur-3xl rounded-full" />
       </div>
 
+      {/* Meteor Effect Layer */}
+      <div className="meteor-container">
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+        <div className="meteor" />
+      </div>
+
       <ForceGraph3D
         ref={graphRef}
         graphData={graphData ?? emptyGraphData}
-        backgroundColor="#000005"
+        backgroundColor="rgba(0,0,0,0)"
         showNavInfo={false}
         nodeThreeObject={nodeObject}
         // No hover labels for book nodes (titles are removed from the 3D view).
