@@ -106,6 +106,12 @@ def reorder_and_build_text(page_words, width):
         # Split within a (block,line) group by y-gaps, but only for *big* gaps.
         # This preserves slanted lines (small gradual y drift) while separating
         # genuinely different lines that got the same `line` id.
+        #
+        # Compare each word's y0 to the cluster's *median* y0 (not the last
+        # word's y0).  When OCR / PDF extraction assigns one `line` id to
+        # several physical lines, the gap from the cluster median to the next
+        # line is much larger than the gap from the cluster maximum, making
+        # the split reliable even when inter-line spacing is tight.
         y_split = max(5.0, median_h * 1.3)
         segments = []
         for (b, l), ws in groups.items():
@@ -114,7 +120,9 @@ def reorder_and_build_text(page_words, width):
                 continue
             cluster = [ws_sorted[0]]
             for ww in ws_sorted[1:]:
-                if (ww["bbox"][1] - cluster[-1]["bbox"][1]) > y_split:
+                cluster_ys = sorted(w["bbox"][1] for w in cluster)
+                cluster_median_y = cluster_ys[len(cluster_ys) // 2]
+                if (ww["bbox"][1] - cluster_median_y) > y_split:
                     segments.append((b, l, cluster))
                     cluster = [ww]
                 else:

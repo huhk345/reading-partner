@@ -91,7 +91,7 @@ function fuzzyTokenEquals(a: string, b: string): boolean {
   return levenshteinDistance(a, b) <= maxDist;
 }
 
-type TokenSpan = { start: number; endExclusive: number; spanLen: number };
+type TokenSpan = { start: number; endExclusive: number; spanLen: number; matchedCount: number };
 
 function findFuzzyTokenSpanMatch(
   wordTokens: string[],
@@ -111,16 +111,27 @@ function findFuzzyTokenSpanMatch(
     wIdx++;
   }
 
-  if (sIdx !== sentTokens.length) return null;
+  // Allow a few missing tokens (OCR can drop words at start/end, e.g. page number prefix
+  // or trailing word), but require a high match ratio to avoid false matches.
+  // For short sentences (≤3 tokens) require exact match; otherwise allow up to 2 missing
+  // and require at least 70% of sentence tokens matched.
+  const matchedCount = sIdx;
+  const minMatched = sentTokens.length <= 3
+    ? sentTokens.length
+    : Math.max(sentTokens.length - 2, Math.ceil(sentTokens.length * 0.7));
+  if (matchedCount < minMatched) return null;
 
   const start = matchIndices[0];
   const endExclusive = matchIndices[matchIndices.length - 1] + 1;
   const spanLen = endExclusive - start;
 
   // Prevent matching a sentence across a much larger region (often indicates we crossed sentence boundaries).
-  if (spanLen > sentTokens.length + 3) return null;
+  // Use a proportional limit so short sentences like ["what", "papers"] don't match
+  // across a wide span like ["mr", "what", "about", "all", "your", "papers", ...].
+  const maxSpanLen = Math.max(matchedCount * 2, matchedCount + 2);
+  if (spanLen > maxSpanLen) return null;
 
-  return { start, endExclusive, spanLen };
+  return { start, endExclusive, spanLen, matchedCount };
 }
 
 // Set up worker for react-pdf
@@ -231,8 +242,10 @@ function WordOverlay({ pageData, pageNumber, renderedWidth, renderedHeight, onWo
                   const span = findFuzzyTokenSpanMatch(currentWordsTokens, s.tokens);
                   if (span) {
                       // Token-span match handles OCR typos like "ang" vs "and" or "stree" vs "street".
+                      // Also handles partial matches where OCR misses words at start/end.
                       const pos = span.start;
-                      const diff = Math.abs(span.spanLen - s.tokens.length);
+                      const missingTokens = s.tokens.length - span.matchedCount;
+                      const diff = Math.abs(span.spanLen - span.matchedCount) + missingTokens;
                       return { sIdx, pos, diff, span };
                   }
 

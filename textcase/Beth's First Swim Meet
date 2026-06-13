@@ -1,0 +1,1274 @@
+right text order: The swimmers were on the starting blocks. Beth's family was watching her.
+"Swimmers ready!" the starter called. "On your mark, get set, go!"
+The racers dived into the pool. But Beth did not dive. She saw her little
+sister Jill. Jill was near the end of
+the pool. She wanted to race, too.
+She was about to dive. Beth knew
+that Jill could not swim.
+"Jill, don't dive!" Beth yelled.
+Jill stopped. Their mother ran to ,
+Jill and picked her up.
+"Oh, thank you, Beth," her
+mother said. "I watched you. I
+didn't watch Jill. I'm sorry you
+didn't get to race."
+"That's all right," Beth said.
+"Jill is safe. I'll try next time."
+
+[
+    {
+        "text": "The",
+        "bbox": [
+            134,
+            179.5,
+            153.5,
+            189
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "“swimmers",
+        "bbox": [
+            134.5,
+            196.5,
+            194.5,
+            206
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "The",
+        "bbox": [
+            134.5,
+            213.5,
+            154,
+            223
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "swimmers",
+        "bbox": [
+            157.5,
+            179,
+            210,
+            188.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "racers",
+        "bbox": [
+            158.5,
+            215.5,
+            188.5,
+            222.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "dived",
+        "bbox": [
+            192.5,
+            211.5,
+            221,
+            222
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "ready!”",
+        "bbox": [
+            198.5,
+            194.5,
+            236.5,
+            206.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "were",
+        "bbox": [
+            214,
+            179.5,
+            239,
+            187
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "into",
+        "bbox": [
+            225.5,
+            212,
+            245.5,
+            221
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "the",
+        "bbox": [
+            241,
+            194,
+            257,
+            203.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "on",
+        "bbox": [
+            243,
+            179.5,
+            256,
+            186
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "the",
+        "bbox": [
+            250,
+            211,
+            266.5,
+            220.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "the",
+        "bbox": [
+            260.5,
+            176,
+            277,
+            186
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "starter",
+        "bbox": [
+            261,
+            194.5,
+            294.5,
+            203
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "pool.",
+        "bbox": [
+            270,
+            210,
+            296,
+            223
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "starting",
+        "bbox": [
+            280.5,
+            175,
+            321.5,
+            187
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "called.",
+        "bbox": [
+            298.5,
+            191.5,
+            331.5,
+            202
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "But",
+        "bbox": [
+            300.5,
+            210,
+            318.5,
+            219
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "Beth",
+        "bbox": [
+            323,
+            208.5,
+            346.5,
+            218.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "blocks.",
+        "bbox": [
+            325.5,
+            173.5,
+            362,
+            184
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "“On",
+        "bbox": [
+            336.5,
+            191,
+            356,
+            200.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "did",
+        "bbox": [
+            351,
+            208,
+            367.5,
+            217.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "your",
+        "bbox": [
+            360.5,
+            193,
+            386,
+            203
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "beth",
+        "bbox": [
+            366.5,
+            172.5,
+            398.5,
+            183
+        ],
+        "block": 3,
+        "line": 1,
+        "original_text": "Beth's"
+    },
+    {
+        "text": "not",
+        "bbox": [
+            372,
+            209,
+            389,
+            217.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "mark,",
+        "bbox": [
+            390,
+            189.5,
+            420,
+            200.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "dive.",
+        "bbox": [
+            393.5,
+            207,
+            418.5,
+            217
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "family",
+        "bbox": [
+            403.5,
+            172,
+            437.5,
+            184.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "She",
+        "bbox": [
+            423.5,
+            207,
+            443,
+            216.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "get",
+        "bbox": [
+            424.5,
+            191.5,
+            440.5,
+            202
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "was",
+        "bbox": [
+            441.5,
+            175,
+            462,
+            182
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "set,",
+        "bbox": [
+            444.5,
+            191.5,
+            461.5,
+            200.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "saw",
+        "bbox": [
+            446.5,
+            209.5,
+            467,
+            216.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "watching",
+        "bbox": [
+            465.5,
+            173,
+            513.5,
+            186.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "go!”",
+        "bbox": [
+            466,
+            190,
+            487.5,
+            202
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "her",
+        "bbox": [
+            471.5,
+            207,
+            488,
+            217
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "little",
+        "bbox": [
+            491.5,
+            207.5,
+            514,
+            218
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "her",
+        "bbox": [
+            517,
+            174.5,
+            533,
+            185.5
+        ],
+        "block": 3,
+        "line": 1
+    },
+    {
+        "text": "sister",
+        "bbox": [
+            120.5,
+            231,
+            147.5,
+            240.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Jill.",
+        "bbox": [
+            151,
+            230,
+            169,
+            240
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Jill",
+        "bbox": [
+            173,
+            229.5,
+            188,
+            239.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "was",
+        "bbox": [
+            192.5,
+            232,
+            212.5,
+            238.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "near",
+        "bbox": [
+            217,
+            231.5,
+            240,
+            238.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "the",
+        "bbox": [
+            244,
+            228,
+            260,
+            237.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "end",
+        "bbox": [
+            264,
+            227.5,
+            282.5,
+            237
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "of",
+        "bbox": [
+            287,
+            227,
+            299,
+            236.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "the",
+        "bbox": [
+            120.5,
+            248,
+            136.5,
+            257.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "pool.",
+        "bbox": [
+            140.5,
+            247.5,
+            166,
+            260
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "She",
+        "bbox": [
+            171,
+            247,
+            189.5,
+            256.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "wanted",
+        "bbox": [
+            193.5,
+            245.5,
+            231.5,
+            256
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "to",
+        "bbox": [
+            236,
+            247,
+            246,
+            255
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "race,",
+        "bbox": [
+            250.5,
+            247.5,
+            274.5,
+            255.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "too.",
+        "bbox": [
+            278.5,
+            246,
+            298,
+            254
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "She",
+        "bbox": [
+            121,
+            265,
+            140,
+            274.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "was",
+        "bbox": [
+            143.5,
+            267,
+            164,
+            274
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "about",
+        "bbox": [
+            168,
+            264,
+            197,
+            273.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "to",
+        "bbox": [
+            201.5,
+            265.5,
+            211.5,
+            273
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "dive.",
+        "bbox": [
+            216,
+            263,
+            240,
+            272.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "Beth",
+        "bbox": [
+            244.5,
+            262,
+            268,
+            272
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "knew",
+        "bbox": [
+            272.5,
+            261.5,
+            300.5,
+            271
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "that",
+        "bbox": [
+            121,
+            282,
+            141,
+            291.5
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "Jill",
+        "bbox": [
+            145,
+            281.5,
+            159.5,
+            291
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "could",
+        "bbox": [
+            164.5,
+            281,
+            193,
+            290.5
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "not",
+        "bbox": [
+            197,
+            282,
+            214,
+            290
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "swim.",
+        "bbox": [
+            218.5,
+            280,
+            248.5,
+            289.5
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "“Jill,",
+        "bbox": [
+            135.5,
+            298.5,
+            158,
+            308.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "don’t",
+        "bbox": [
+            162.5,
+            298,
+            188.5,
+            307.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "dive!”",
+        "bbox": [
+            193,
+            297,
+            223.5,
+            307
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Beth",
+        "bbox": [
+            228,
+            296.5,
+            251.5,
+            306
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "yelled.",
+        "bbox": [
+            255.5,
+            295.5,
+            289.5,
+            308.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Jill",
+        "bbox": [
+            120.5,
+            315.5,
+            135.5,
+            325
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "stopped.",
+        "bbox": [
+            140,
+            315,
+            183,
+            327
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "Their",
+        "bbox": [
+            187,
+            314.5,
+            214.5,
+            324
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "mother",
+        "bbox": [
+            218,
+            313.5,
+            255.5,
+            323.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "ran",
+        "bbox": [
+            259.5,
+            316,
+            276.5,
+            322.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "to",
+        "bbox": [
+            280.5,
+            315,
+            290.5,
+            322.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "Jill",
+        "bbox": [
+            120.5,
+            332.5,
+            135.5,
+            342
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "and",
+        "bbox": [
+            140,
+            332,
+            159,
+            341.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "picked",
+        "bbox": [
+            163.5,
+            331.5,
+            196.5,
+            344
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "her",
+        "bbox": [
+            201,
+            331.5,
+            218,
+            340.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "up.",
+        "bbox": [
+            221.5,
+            333.5,
+            237,
+            343
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "“Oh,",
+        "bbox": [
+            135.5,
+            349,
+            157.5,
+            359.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "thank",
+        "bbox": [
+            162,
+            348.5,
+            192,
+            358
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "you,",
+        "bbox": [
+            195.5,
+            351,
+            218,
+            360.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Beth,”",
+        "bbox": [
+            222.5,
+            347.5,
+            254,
+            358
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "her",
+        "bbox": [
+            258.5,
+            347,
+            275.5,
+            356.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "mother",
+        "bbox": [
+            121,
+            366.5,
+            158.5,
+            376
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "said.",
+        "bbox": [
+            162,
+            365.5,
+            185,
+            375.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "“]",
+        "bbox": [
+            189.5,
+            365.5,
+            197,
+            375
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "watched",
+        "bbox": [
+            201.5,
+            364.5,
+            245.5,
+            374.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "you.",
+        "bbox": [
+            249,
+            367,
+            272,
+            376.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "I",
+        "bbox": [
+            276.5,
+            364,
+            279.5,
+            373.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "didn't",
+        "bbox": [
+            120.5,
+            383.5,
+            150.5,
+            393
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "watch",
+        "bbox": [
+            154.5,
+            383,
+            186,
+            392.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "Jill.",
+        "bbox": [
+            190,
+            382.5,
+            207.5,
+            392
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "I'm",
+        "bbox": [
+            212.5,
+            382.5,
+            228,
+            391.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "sorry",
+        "bbox": [
+            232.5,
+            384.5,
+            259,
+            393.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "you",
+        "bbox": [
+            262.5,
+            384,
+            283,
+            393.5
+        ],
+        "block": 4,
+        "line": 3
+    },
+    {
+        "text": "didn’t",
+        "bbox": [
+            120.5,
+            400.5,
+            150,
+            410
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "get",
+        "bbox": [
+            155,
+            402,
+            170,
+            412.5
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "to",
+        "bbox": [
+            174.5,
+            401.5,
+            184.5,
+            409.5
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "race.”",
+        "bbox": [
+            189,
+            399.5,
+            217.5,
+            409
+        ],
+        "block": 4,
+        "line": 4
+    },
+    {
+        "text": "“That's",
+        "bbox": [
+            135,
+            417.5,
+            171,
+            427
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "all",
+        "bbox": [
+            175,
+            417,
+            187,
+            426.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "right,”",
+        "bbox": [
+            192,
+            416.5,
+            224,
+            428.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "Beth",
+        "bbox": [
+            228.5,
+            416,
+            251.5,
+            425.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "said.",
+        "bbox": [
+            256,
+            415.5,
+            279,
+            425.5
+        ],
+        "block": 4,
+        "line": 1
+    },
+    {
+        "text": "“Jill",
+        "bbox": [
+            120,
+            434.5,
+            139.5,
+            444
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "is",
+        "bbox": [
+            145,
+            434.5,
+            152.5,
+            444
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "safe.",
+        "bbox": [
+            156.5,
+            434,
+            179.5,
+            444
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "I'll",
+        "bbox": [
+            184,
+            433.5,
+            196.5,
+            443
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "try",
+        "bbox": [
+            201,
+            435.5,
+            215,
+            445.5
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "next",
+        "bbox": [
+            219.5,
+            435,
+            242.5,
+            443
+        ],
+        "block": 4,
+        "line": 2
+    },
+    {
+        "text": "time.”",
+        "bbox": [
+            247,
+            433,
+            277.5,
+            442.5
+        ],
+        "block": 4,
+        "line": 2
+    }
+]
