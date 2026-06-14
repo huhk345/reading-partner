@@ -71,6 +71,9 @@ def lookup_bing(word: str):
             for li in qdef_ul.select("li"):
                 text = li.get_text(strip=True)
                 if text and text != "网络":
+                    # Wrap part-of-speech prefix (n./v./adj./网络 etc.) in 【】
+                    text = re.sub(r'^([a-zA-Z]+\.)', r'【\1】', text)
+                    text = re.sub(r'^网络', r'【网络】', text)
                     zh_trans_parts.append(text)
 
         zh_trans = "\n".join(zh_trans_parts)
@@ -82,9 +85,6 @@ def lookup_bing(word: str):
         zh_detail_parts = []
 
         for seg in soup.select('.de_seg'):
-            pos_el = seg.find_previous(class_='pos')
-            pos_text = pos_el.get_text(strip=True) if pos_el else ""
-
             for se_lis in seg.select('.se_lis'):
                 num_el = se_lis.select_one('.se_d')
                 num = num_el.get_text(strip=True) if num_el else ""
@@ -103,8 +103,9 @@ def lookup_bing(word: str):
 
         en_def = "\n".join(en_def_parts)
 
-        # If we got detailed zh translations, prefer those over the quick summary
-        if zh_detail_parts:
+        # Keep the compact quick summary (n./v./adj. format) as primary zh_trans
+        # Only fall back to detailed translations if quick summary is empty
+        if not zh_trans and zh_detail_parts:
             zh_trans = "\n".join(zh_detail_parts)
 
         if not zh_trans and not en_def:
@@ -122,84 +123,80 @@ def lookup_bing(word: str):
 
 def lookup_word(word: str):
     """
-    Fetches word definition from DictionaryAPI.dev and translation from ECDICT (local DB).
-    Falls back to Bing Dictionary if primary sources yield no results.
+    Fetches word definition from Bing Dictionary first, then supplements with
+    DictionaryAPI.dev and ECDICT (local DB).
     """
     word = word.lower()
 
-    # 1. Fetch English Definition (Free DictionaryAPI)
-    api_url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
     en_def = ""
     phonetic = ""
     audio_url = ""
-
-    try:
-        response = requests.get(api_url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list) and len(data) > 0:
-                entry = data[0]
-
-                phonetics = entry.get("phonetics", [])
-                audio_url = ""
-                # Start with top-level phonetic as default
-                phonetic = entry.get("phonetic", "")
-
-                # Priority: US (2) > UK (1) > Others (0)
-                best_audio_priority = -1
-
-                for p in phonetics:
-                    p_audio = p.get("audio", "")
-                    p_text = p.get("text", "")
-
-                    if p_audio:
-                        priority = 0
-                        # Check for US/UK in the audio URL
-                        if "-us" in p_audio.lower() or "/us/" in p_audio.lower():
-                            priority = 2
-                        elif "-uk" in p_audio.lower() or "/uk/" in p_audio.lower():
-                            priority = 1
-
-                        if priority > best_audio_priority:
-                            best_audio_priority = priority
-                            audio_url = p_audio
-                            # Use the phonetic associated with this audio if it exists
-                            if p_text:
-                                phonetic = p_text
-                    elif best_audio_priority < 0 and p_text and not phonetic:
-                        # Fallback to first available phonetic text if no audio found yet and no top-level phonetic
-                        phonetic = p_text
-
-                # Extract first definition
-                meanings = entry.get("meanings", [])
-                if meanings:
-                    first_meaning = meanings[0]
-                    definitions = first_meaning.get("definitions", [])
-                    if definitions:
-                        en_def = definitions[0].get("definition", "")
-    except Exception as e:
-        print(f"Error fetching definition: {e}")
-
-    # 2. Fetch Chinese Translation (ECDICT local DB)
     zh_trans = ""
-    ecdict_data = get_ecdict_entry(word)
 
-    if ecdict_data:
-        zh_trans = ecdict_data.get("translation", "").replace("\\n", "\n")
-        # Use ECDICT phonetic if DictionaryAPI didn't provide one
-        if not phonetic and ecdict_data.get("phonetic"):
-            phonetic = ecdict_data.get("phonetic")
+    # 1. Try Bing Dictionary first
+    bing_result = lookup_bing(word)
+    if bing_result:
+        phonetic = bing_result.get("phonetic", "")
+        zh_trans = bing_result.get("zh_trans", "")
+        en_def = bing_result.get("en_def", "")
 
-    # 3. Fallback to Bing Dictionary if primary sources yield no results
-    if not en_def and not zh_trans:
-        bing_result = lookup_bing(word)
-        if bing_result:
-            if not phonetic and bing_result.get("phonetic"):
-                phonetic = bing_result["phonetic"]
-            if not zh_trans and bing_result.get("zh_trans"):
-                zh_trans = bing_result["zh_trans"]
-            if not en_def and bing_result.get("en_def"):
-                en_def = bing_result["en_def"]
+    # 2. Fetch Chinese Translation from ECDICT (local DB) if not found
+    if not zh_trans:
+        ecdict_data = get_ecdict_entry(word)
+        if ecdict_data:
+            zh_trans = ecdict_data.get("translation", "").replace("\\n", "\n")
+            if not phonetic and ecdict_data.get("phonetic"):
+                phonetic = ecdict_data.get("phonetic")
+
+    # 3. Fetch English Definition from DictionaryAPI if not found
+    if not en_def:
+        api_url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+        try:
+            response = requests.get(api_url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) > 0:
+                    entry = data[0]
+
+                    phonetics = entry.get("phonetics", [])
+                    # Start with top-level phonetic as default
+                    if not phonetic:
+                        phonetic = entry.get("phonetic", "")
+
+                    # Priority: US (2) > UK (1) > Others (0)
+                    best_audio_priority = -1
+
+                    for p in phonetics:
+                        p_audio = p.get("audio", "")
+                        p_text = p.get("text", "")
+
+                        if p_audio:
+                            priority = 0
+                            # Check for US/UK in the audio URL
+                            if "-us" in p_audio.lower() or "/us/" in p_audio.lower():
+                                priority = 2
+                            elif "-uk" in p_audio.lower() or "/uk/" in p_audio.lower():
+                                priority = 1
+
+                            if priority > best_audio_priority:
+                                best_audio_priority = priority
+                                audio_url = p_audio
+                                # Use the phonetic associated with this audio if it exists
+                                if p_text and not phonetic:
+                                    phonetic = p_text
+                        elif best_audio_priority < 0 and p_text and not phonetic:
+                            # Fallback to first available phonetic text if no audio found yet and no top-level phonetic
+                            phonetic = p_text
+
+                    # Extract first definition
+                    meanings = entry.get("meanings", [])
+                    if meanings:
+                        first_meaning = meanings[0]
+                        definitions = first_meaning.get("definitions", [])
+                        if definitions:
+                            en_def = definitions[0].get("definition", "")
+        except Exception as e:
+            print(f"Error fetching definition: {e}")
 
     # 4. Combine results
     if not en_def and not zh_trans:

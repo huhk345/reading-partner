@@ -1785,6 +1785,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                         filter: (isLoadingWord && selectedWord?.meaning) ? 'blur(4px)' : 'blur(0px)'
                       }}
                     >
+                      <div className="max-h-[40vh] overflow-y-auto pr-1">
                       <div className="mb-8">
                         <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                           <span className="w-2 h-2 bg-indigo-400 rounded-full" />
@@ -1806,6 +1807,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
                           </div>
                         </div>
                       )}
+                      </div>
 
                       {selectedWord?.in_vocab ? (
                         <div className="px-5 py-4 rounded-2xl font-bold text-lg bg-amber-50 text-amber-600 border-2 border-amber-200 w-full flex items-center justify-center gap-3">
