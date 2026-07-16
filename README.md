@@ -62,10 +62,8 @@ reading-partner/
 Create a `.env` file in the `backend/` directory with the following variables:
 
 ```bash
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-# Optional: Comma-separated list for model failover
-# DEFAULT_MODEL=meta-llama/llama-3.1-8b-instruct,google/gemini-pro-1.5
+VITE_OPENCODE_API_KEY=your_opencode_api_key_here
+AI_MODEL=deepseek-v4-flash-free
 ```
 
 ### Installation

@@ -286,10 +286,10 @@ function WordOverlay({ pageData, pageNumber, renderedWidth, renderedHeight, onWo
                   // Fuzzy match for sentences that are almost identical
                   let minDist = Infinity;
                   const startIdx: number = expectedSentenceIdx !== null ? expectedSentenceIdx : 0;
-                  const endIdx: number = expectedSentenceIdx !== null ? expectedSentenceIdx + 1 : normalizedSentences.length;
+                  const endIdx: number = expectedSentenceIdx !== null ? Math.min(expectedSentenceIdx + 1, normalizedSentences.length) : normalizedSentences.length;
                   for (let sIdx: number = startIdx; sIdx < endIdx; sIdx++) {
                       const s = normalizedSentences[sIdx];
-                      if (Math.abs(s.normalized.length - normalizedText.length) > 3) continue;
+                      if (!s || Math.abs(s.normalized.length - normalizedText.length) > 3) continue;
                       const dist = levenshteinDistance(s.normalized, normalizedText);
                       const maxDist = normalizedText.length > 10 ? 3 : 1;
                       if (dist <= maxDist) {

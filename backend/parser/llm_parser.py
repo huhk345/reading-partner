@@ -7,72 +7,62 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../.env'))
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# Get default model(s) from environment. Support comma-separated list for failover.
-DEFAULT_MODEL_ENV = os.getenv("DEFAULT_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
-DEFAULT_MODELS = [m.strip() for m in DEFAULT_MODEL_ENV.split(",") if m.strip()]
-if not DEFAULT_MODELS:
-    DEFAULT_MODELS = ["nvidia/nemotron-3-super-120b-a12b:free"]
-# Maintain DEFAULT_MODEL for compatibility, use the first one from the list
-DEFAULT_MODEL = DEFAULT_MODELS[0]
+OPENCODE_API_KEY = os.getenv("VITE_OPENCODE_API_KEY")
+OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
+# Get default model from environment
+DEFAULT_MODEL = os.getenv("AI_MODEL", "deepseek-v4-flash-free")
 
-def call_openrouter(messages, model=None, temperature=0.7, max_tokens=50000):
+def call_opencode(messages, model=None, temperature=0.7, max_tokens=50000):
     """
-    Calls OpenRouter API with optional model override. 
-    If model is not provided, it cycles through DEFAULT_MODELS on failure.
+    Calls OpenCode API with optional model override.
     Retries up to 3 times (4 attempts total).
     """
-    if not OPENROUTER_API_KEY:
-        print("Warning: OPENROUTER_API_KEY not found in environment.")
+    if not OPENCODE_API_KEY:
+        print("Warning: OPENCODE_API_KEY not found in environment.")
         return None
-    
-    # Use specified model or fallback to default models list
-    models_to_try = [model] if model else DEFAULT_MODELS
+
+    # Use specified model or fallback to default model
+    current_model = model if model else DEFAULT_MODEL
     # Retry at most 3 times means 4 total attempts
     max_attempts = 4
-    
+
     for attempt in range(max_attempts):
-        current_model = models_to_try[attempt % len(models_to_try)]
         try:
             payload = {
                 "model": current_model,
                 "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens
+                "temperature": temperature
             }
-            
+
             response = requests.post(
-                f"{OPENROUTER_BASE_URL}/chat/completions",
+                f"{OPENCODE_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-Title": "Reading Partner",
+                    "Authorization": f"Bearer {OPENCODE_API_KEY}",
                     "Content-Type": "application/json"
                 },
                 json=payload,
-                timeout=60
+                timeout=120
             )
             if response.status_code == 200:
                 return response.json()['choices'][0]['message']['content']
             else:
-                print(f"OpenRouter API error (attempt {attempt + 1}, model {current_model}): {response.status_code} - {response.text}")
+                print(f"OpenCode API error (attempt {attempt + 1}, model {current_model}): {response.status_code} - {response.text}")
         except Exception as e:
-            print(f"Error calling OpenRouter (attempt {attempt + 1}, model {current_model}): {e}")
-            
+            print(f"Error calling OpenCode (attempt {attempt + 1}, model {current_model}): {e}")
+
     return None
 
 def get_book_info_and_clean_text(text_sample):
     """
-    Uses OpenRouter free LLM to extract book title and clean up a text sample.
+    Uses OpenCode LLM to extract book title and clean up a text sample.
     Focuses on extracting the 'real content' - the actual narrative text.
     """
     prompt = f"""
     You are an expert book editor. Analyze the following text sample from a book.
-    
+
     Tasks:
     1. Identify the "title" of the book.
-    2. Extract the "cleaned_sample": This should be the REAL narrative content that a reader cares about. 
+    2. Extract the "cleaned_sample": This should be the REAL narrative content that a reader cares about.
        - REMOVE: Page numbers, headers, footers, copyright notices, ISBNs, publisher info, and tables of contents.
        - KEEP: The actual story, dialogue, and main text.
        - DO NOT summarize. Keep the original wording exactly as it is, just filter out the non-book elements.
@@ -80,12 +70,12 @@ def get_book_info_and_clean_text(text_sample):
 
     Text sample:
     {text_sample[:5000]}
-    
+
     Response format: {{"title": "...", "cleaned_sample": "..."}}
     Return ONLY the JSON.
     """
-    print("Calling OpenRouter to extract book info and clean text...")
-    response = call_openrouter([{"role": "user", "content": prompt}], temperature=0.1)
+    print("Calling OpenCode to extract book info and clean text...")
+    response = call_opencode([{"role": "user", "content": prompt}], temperature=0.1)
     if response:
         # Extract JSON from response
         match = re.search(r'\{.*\}', response, re.DOTALL)
