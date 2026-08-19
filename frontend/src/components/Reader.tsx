@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
-import { Volume2, Plus, History, X, FileText, RefreshCw, Play, Check } from 'lucide-react';
+import { Volume2, Plus, History, X, FileText, RefreshCw, Play, Check, Search } from 'lucide-react';
 import { Book, WordDefinition, PageData, Sentence, WordData } from '../types';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -837,6 +837,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const [activeWord, setActiveWord] = useState<string>('');
   const [inputWord, setInputWord] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isLoadingWord, setIsLoadingWord] = useState(false);
   const [hasPlayedLemma, setHasPlayedLemma] = useState(false);
   const hasAutoPlayedRef = useRef(false);
@@ -873,6 +874,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const cancelReadPageRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const currentPlaybackResolveRef = useRef<(() => void) | null>(null);
@@ -1174,7 +1176,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
   }, []);
 
   const lookupWord = useCallback(async (word: string, sentenceId?: number, skipLemma: boolean = false, forceRefresh: boolean = false) => {
-    const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    const cleanWord = word.replace(/[^\w\s'’-]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
     setIsLoadingWord(true);
@@ -1218,7 +1220,7 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
 
   const handleWordClick = async (word: string, sentenceId?: number, sentenceText?: string) => {
     // Clean word: remove punctuation and whitespace, keep only letters and apostrophes
-    const cleanWord = word.replace(/[^\w\s'’]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    const cleanWord = word.replace(/[^\w\s'’-]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!cleanWord) return;
 
     // Open dialog immediately with loading state (REQ-001)
@@ -1235,6 +1237,25 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
     setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
     
     await lookupWord(cleanWord, sentenceId, false);
+  };
+
+  const handleSearchSubmit = async () => {
+    const cleanWord = inputWord.replace(/[^\w\s'’-]|_/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!cleanWord) return;
+
+    setIsSearchOpen(false);
+    setInputWord(cleanWord);
+    setLastSentenceId(undefined);
+    setLastSentenceText(undefined);
+    setOriginalWord(cleanWord);
+    setActiveWord(cleanWord);
+    setLemma(undefined);
+    setHasPlayedLemma(false);
+    hasAutoPlayedRef.current = false;
+    setSelectedWord({ id: 0, word: cleanWord, phonetic: '', meaning: '' });
+
+    setIsDialogOpen(true);
+    await lookupWord(cleanWord, undefined, false);
   };
 
   const handleLemmaClick = async (lemmaWord: string) => {
@@ -1643,6 +1664,55 @@ export default function Reader({ bookId, onBack }: ReaderProps) {
             </div>
             </div>
             )}
+      {/* Floating Word Search */}
+      <AnimatePresence>
+        {isSearchOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.2 }}
+            className={`absolute left-6 z-[90] max-w-md w-[calc(100%-3rem)] ${book.type === 'pdf' ? 'bottom-[140px]' : 'bottom-[96px]'}`}
+          >
+            <div className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-2xl">
+              <Search className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={inputWord}
+                onChange={(e) => setInputWord(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearchSubmit();
+                  }
+                }}
+                placeholder="Search for any word..."
+                className="flex-1 bg-transparent text-lg font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none"
+              />
+              <button
+                onClick={() => setIsSearchOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0"
+                title="Close search"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <button
+        onClick={() => {
+          setIsSearchOpen(prev => !prev);
+          if (!isSearchOpen) {
+            setTimeout(() => searchInputRef.current?.focus(), 50);
+          }
+        }}
+        className={`absolute left-6 z-[85] flex items-center justify-center gap-2 px-4 py-3 text-white font-bold shadow-2xl rounded-full transition-all ${book.type === 'pdf' ? 'bottom-20' : 'bottom-6'} ${isSearchOpen ? 'bg-indigo-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+        title="Search a word"
+      >
+        <Search className="w-5 h-5" />
+        <span className="text-sm">Search</span>
+      </button>
       {/* Word Definition Modal */}
       <AnimatePresence>
         {isDialogOpen && (

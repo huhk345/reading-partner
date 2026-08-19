@@ -1,54 +1,61 @@
 import json
 import re
-import requests
 import os
+import shutil
+import subprocess
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../.env'))
 
-OPENCODE_API_KEY = os.getenv("VITE_OPENCODE_API_KEY")
-OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
 # Get default model from environment
 DEFAULT_MODEL = os.getenv("AI_MODEL", "deepseek-v4-flash-free")
 
+def _find_opencode_cli():
+    """Locates the opencode CLI binary."""
+    return shutil.which("opencode")
+
 def call_opencode(messages, model=None, temperature=0.7, max_tokens=50000):
     """
-    Calls OpenCode API with optional model override.
+    Calls OpenCode via the local CLI (avoids API 429 rate limits).
+    The CLI manages auth/rate limits itself.
     Retries up to 3 times (4 attempts total).
     """
-    if not OPENCODE_API_KEY:
-        print("Warning: OPENCODE_API_KEY not found in environment.")
+    cli = _find_opencode_cli()
+    if not cli:
+        print("Warning: opencode CLI not found in PATH.")
         return None
 
-    # Use specified model or fallback to default model
+    # CLI expects provider/model format, e.g. opencode/mimo-v2.5-free
     current_model = model if model else DEFAULT_MODEL
+    if "/" not in current_model:
+        current_model = f"opencode/{current_model}"
+
+    # Flatten messages into a single prompt (CLI takes one message via stdin)
+    prompt = "\n\n".join(m["content"] for m in messages if m.get("content"))
+    if not prompt.strip():
+        return None
+
     # Retry at most 3 times means 4 total attempts
     max_attempts = 4
 
     for attempt in range(max_attempts):
         try:
-            payload = {
-                "model": current_model,
-                "messages": messages,
-                "temperature": temperature
-            }
-
-            response = requests.post(
-                f"{OPENCODE_BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENCODE_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=120
+            result = subprocess.run(
+                [cli, "run", "-m", current_model],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=180
             )
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
+            # Response text goes to stdout; headers/progress go to stderr
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
             else:
-                print(f"OpenCode API error (attempt {attempt + 1}, model {current_model}): {response.status_code} - {response.text}")
+                err = (result.stderr or "").strip()[-500:]
+                print(f"OpenCode CLI error (attempt {attempt + 1}, model {current_model}): rc={result.returncode} {err}")
         except Exception as e:
-            print(f"Error calling OpenCode (attempt {attempt + 1}, model {current_model}): {e}")
+            print(f"Error calling OpenCode CLI (attempt {attempt + 1}, model {current_model}): {e}")
 
     return None
 
